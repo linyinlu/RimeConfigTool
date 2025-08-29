@@ -86,15 +86,22 @@ class RimeManager: ObservableObject {
     @Published var currentTheme: RimeTheme = RimeTheme.default
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var customConfigPath: String = ""
     
-    private let rimeUserDir: URL
     private let fileManager = FileManager.default
     
-    init() {
-        // Rime用户配置目录
-        let homeDir = fileManager.homeDirectoryForCurrentUser
-        self.rimeUserDir = homeDir.appendingPathComponent("Library/Rime")
+    // 计算属性：获取正确的 Rime 配置目录
+    var rimeUserDir: URL {
+        if !customConfigPath.isEmpty {
+            return URL(fileURLWithPath: customConfigPath)
+        }
         
+        // 直接使用用户的真实主目录，避免沙盒化路径
+        let realHomeDir = URL(fileURLWithPath: NSHomeDirectory())
+        return realHomeDir.appendingPathComponent("Library/Rime")
+    }
+    
+    init() {
         checkRimeInstallation()
     }
     

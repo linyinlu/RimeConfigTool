@@ -117,9 +117,54 @@ struct GeneralConfigView: View {
                                     Label("打开配置目录", systemImage: "folder")
                                 }
                                 .buttonStyle(.bordered)
-                                .help("打开 ~/Library/Rime 配置目录")
+                                .help("打开 Rime 配置目录")
+                                
+                                Button(action: {
+                                    selectCustomConfigDirectory()
+                                }) {
+                                    Label("选择配置目录", systemImage: "folder.badge.gearshape")
+                                }
+                                .buttonStyle(.bordered)
+                                .help("选择自定义 Rime 配置目录")
                                 
                                 Spacer()
+                            }
+                            
+                            // 显示当前配置目录
+                            if !rimeManager.customConfigPath.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("自定义配置目录:")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text(rimeManager.customConfigPath)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(.blue)
+                                        .padding(4)
+                                        .background(Color.blue.opacity(0.1))
+                                        .cornerRadius(4)
+                                        .textSelection(.enabled)
+                                    
+                                    Button("恢复默认目录") {
+                                        rimeManager.customConfigPath = ""
+                                        rimeManager.checkRimeInstallation()
+                                    }
+                                    .font(.caption)
+                                    .buttonStyle(.link)
+                                }
+                            } else {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("当前使用默认配置目录:")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text(rimeManager.rimeUserDir.path)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                        .textSelection(.enabled)
+                                }
                             }
                         }
                         .padding()
@@ -157,14 +202,13 @@ struct GeneralConfigView: View {
             }
         }
         .sheet(isPresented: $showingRimeDirectory) {
-            RimeDirectoryView()
+            RimeDirectoryView(rimeManager: rimeManager)
         }
     }
     
     // MARK: - 辅助方法
     private func openRimeConfigDirectory() {
-        let rimeConfigURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Rime")
+        let rimeConfigURL = rimeManager.rimeUserDir
         
         // 如果目录不存在，先创建它
         if !FileManager.default.fileExists(atPath: rimeConfigURL.path) {
@@ -178,13 +222,58 @@ struct GeneralConfigView: View {
         
         NSWorkspace.shared.open(rimeConfigURL)
     }
+    
+    private func selectCustomConfigDirectory() {
+        let openPanel = NSOpenPanel()
+        openPanel.title = "选择 Rime 配置目录"
+        openPanel.message = "请导航到 /Users/你的用户名/Library/Rime 目录"
+        openPanel.canChooseFiles = false
+        openPanel.canChooseDirectories = true
+        openPanel.canCreateDirectories = false
+        openPanel.allowsMultipleSelection = false
+        openPanel.showsHiddenFiles = true  // 显示隐藏文件夹
+        
+        // 尝试设置默认路径
+        let userLibraryPath = "/Users/\(NSUserName())/Library"
+        openPanel.directoryURL = URL(fileURLWithPath: userLibraryPath)
+        
+        openPanel.begin { response in
+            if response == .OK, let url = openPanel.url {
+                // 验证选择的目录是否是有效的 Rime 配置目录
+                let selectedPath = url.path
+                if selectedPath.contains("/Library/Rime") ||
+                   FileManager.default.fileExists(atPath: url.appendingPathComponent("default.yaml").path) ||
+                   FileManager.default.fileExists(atPath: url.appendingPathComponent("squirrel.yaml").path) {
+                    
+                    rimeManager.customConfigPath = selectedPath
+                    rimeManager.checkRimeInstallation()
+                    rimeManager.loadConfigurations()
+                    print("已设置自定义配置目录: \(selectedPath)")
+                } else {
+                    // 显示错误提示
+                    DispatchQueue.main.async {
+                        let alert = NSAlert()
+                        alert.messageText = "无效的配置目录"
+                        alert.informativeText = "所选目录似乎不是有效的 Rime 配置目录。请选择包含 .yaml 配置文件的目录。"
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "确定")
+                        alert.runModal()
+                    }
+                }
+            }
+        }
+    }
 }
 
 struct RimeDirectoryView: View {
     @Environment(\.dismiss) private var dismiss
-    private let rimeDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Rime")
+    @ObservedObject var rimeManager: RimeManager
     @State private var configFiles: [String] = []
     @State private var isLoading = true
+    
+    var rimeDirectory: URL {
+        return rimeManager.rimeUserDir
+    }
     
     var body: some View {
         VStack(spacing: 16) {

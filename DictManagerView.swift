@@ -8,7 +8,6 @@ struct DictManagerView: View {
     @State private var selectedEntry: DictEntry?
     @State private var showingAddEntry = false
     @State private var showingImportDialog = false
-    @State private var showingExportDialog = false
     @State private var showingEditEntry: DictEntry? = nil
     @State private var isLoading = false
     
@@ -32,31 +31,23 @@ struct DictManagerView: View {
                 
                 Spacer()
                 
-                Button(action: {
+                Button("添加词汇") {
                     showingAddEntry = true
-                }) {
-                    Label("添加词汇", systemImage: "plus")
                 }
                 .buttonStyle(.bordered)
                 
-                Button(action: {
-                    importDictionary()
-                }) {
-                    Label("导入词典", systemImage: "square.and.arrow.down")
+                Button("导入词典") {
+                    showingImportDialog = true
                 }
                 .buttonStyle(.bordered)
                 
-                Button(action: {
+                Button("导出词典") {
                     exportDictionary()
-                }) {
-                    Label("导出词典", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.bordered)
                 
-                Button(action: {
+                Button("刷新") {
                     loadUserDict()
-                }) {
-                    Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
             }
@@ -64,57 +55,26 @@ struct DictManagerView: View {
             
             Divider()
             
-            // 搜索栏和统计
-            VStack(spacing: 8) {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-                    
-                    TextField("搜索词汇或编码...", text: $searchText)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    if !searchText.isEmpty {
-                        Button(action: {
-                            searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal)
+            // 搜索栏
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
                 
-                HStack {
-                    Text("共 \(userDictEntries.count) 个词汇")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    if !searchText.isEmpty {
-                        Text("筛选结果: \(filteredEntries.count)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                TextField("搜索词汇或编码...", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                
+                if !searchText.isEmpty {
+                    Button("清除") {
+                        searchText = ""
                     }
-                    
-                    Spacer()
-                    
-                    if isLoading {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                                .controlSize(.mini)
-                            Text("加载中...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal)
             }
+            .padding(.horizontal)
             
             // 词汇列表
             if filteredEntries.isEmpty {
-                VStack(spacing: 16) {
+                VStack {
                     Image(systemName: "book.closed")
                         .font(.system(size: 48))
                         .foregroundColor(.secondary)
@@ -124,46 +84,56 @@ struct DictManagerView: View {
                         .foregroundColor(.secondary)
                     
                     if searchText.isEmpty {
-                        VStack(spacing: 8) {
-                            Text("开始添加你的个人词汇吧！")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Button("添加第一个词汇") {
-                                showingAddEntry = true
-                            }
-                            .buttonStyle(.borderedProminent)
+                        Button("添加第一个词汇") {
+                            showingAddEntry = true
                         }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(filteredEntries, selection: $selectedEntry) { entry in
-                    DictEntryRowView(
-                        entry: entry,
-                        isSelected: selectedEntry?.id == entry.id,
-                        onSelect: { selectedEntry = entry },
-                        onEdit: { showingEditEntry = entry },
-                        onDelete: { deleteEntry(entry) }
-                    )
+                List {
+                    ForEach(filteredEntries) { entry in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(entry.word)
+                                    .font(.headline)
+                                
+                                Text("\(entry.code) - 权重: \(entry.weight)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Button("编辑") {
+                                showingEditEntry = entry
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            
+                            Button("删除") {
+                                deleteEntry(entry)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .foregroundColor(.red)
+                        }
+                        .padding(.vertical, 4)
+                    }
                 }
-                .listStyle(.plain)
-                .alternatingRowBackgrounds()
             }
-            
-            Spacer()
             
             // 底部状态栏
             HStack {
-                if let selected = selectedEntry {
-                    Text("已选择: \(selected.word)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                Text("共 \(userDictEntries.count) 个词汇")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 
                 Spacer()
                 
-                Button("保存用户词典") {
+                Button("保存词典") {
                     saveUserDict()
                 }
                 .buttonStyle(.borderedProminent)
@@ -191,14 +161,6 @@ struct DictManagerView: View {
         ) { result in
             handleImport(result)
         }
-        .fileExporter(
-            isPresented: $showingExportDialog,
-            document: DictDocument(entries: userDictEntries),
-            contentType: .plainText,
-            defaultFilename: "用户词典"
-        ) { result in
-            handleExport(result)
-        }
         .onAppear {
             loadUserDict()
         }
@@ -208,31 +170,45 @@ struct DictManagerView: View {
     private func loadUserDict() {
         isLoading = true
         
-        // 从真实的 Rime 配置目录加载词典
-        let rimeDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Rime")
+        let rimeDir = rimeManager.rimeUserDir
         let userDictFile = rimeDir.appendingPathComponent("user.dict.yaml")
         
         DispatchQueue.global(qos: .userInitiated).async {
             var entries: [DictEntry] = []
             
-            // 尝试从真实文件加载
+            print("尝试加载用户词典: \(userDictFile.path)")
+            
             if FileManager.default.fileExists(atPath: userDictFile.path) {
                 do {
-                    let content = try String(contentsOf: userDictFile)
+                    let content = try String(contentsOf: userDictFile, encoding: .utf8)
                     entries = parseUserDict(content)
+                    print("成功加载了 \(entries.count) 个词汇")
                 } catch {
-                    print("加载用户词典失败: \(error)")
+                    print("加载失败: \(error)")
+                }
+            } else {
+                // 检查其他词典文件
+                do {
+                    let contents = try FileManager.default.contentsOfDirectory(atPath: rimeDir.path)
+                    let dictFiles = contents.filter { $0.hasSuffix(".dict.yaml") }
+                    print("找到词典文件: \(dictFiles)")
+                    
+                    for dictFile in dictFiles {
+                        let fullPath = rimeDir.appendingPathComponent(dictFile)
+                        let content = try String(contentsOf: fullPath, encoding: .utf8)
+                        let dictEntries = parseUserDict(content)
+                        entries.append(contentsOf: dictEntries)
+                        print("从 \(dictFile) 加载了 \(dictEntries.count) 个词汇")
+                    }
+                } catch {
+                    print("扫描目录失败: \(error)")
                 }
             }
             
-            // 如果没有真实数据，使用示例数据
             if entries.isEmpty {
                 entries = [
-                    DictEntry(word: "Claude", code: "claude", weight: 100),
-                    DictEntry(word: "Anthropic", code: "anthropic", weight: 90),
-                    DictEntry(word: "人工智能", code: "rgzn", weight: 80),
-                    DictEntry(word: "机器学习", code: "jqxx", weight: 75),
-                    DictEntry(word: "深度学习", code: "sdxx", weight: 70)
+                    DictEntry(word: "配置工具", code: "pzgj", weight: 100),
+                    DictEntry(word: "输入法", code: "srf", weight: 90)
                 ]
             }
             
@@ -246,71 +222,30 @@ struct DictManagerView: View {
     private func parseUserDict(_ content: String) -> [DictEntry] {
         var entries: [DictEntry] = []
         let lines = content.components(separatedBy: .newlines)
+        var inDataSection = false
         
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("---") {
+            
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
                 continue
             }
             
-            let parts = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            if parts.count >= 2 {
-                let word = parts[0]
-                let code = parts[1]
-                let weight = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
-                
-                entries.append(DictEntry(word: word, code: code, weight: weight))
-            }
-        }
-        
-        return entries
-    }
-    
-    private func importDictionary() {
-        showingImportDialog = true
-    }
-    
-    private func exportDictionary() {
-        showingExportDialog = true
-    }
-    
-    private func handleImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard let url = urls.first else { return }
-            
-            do {
-                let content = try String(contentsOf: url)
-                let importedEntries = parseImportedDict(content, fileExtension: url.pathExtension)
-                userDictEntries.append(contentsOf: importedEntries)
-            } catch {
-                print("导入失败: \(error)")
+            if trimmed == "..." {
+                inDataSection = true
+                continue
             }
             
-        case .failure(let error):
-            print("文件选择失败: \(error)")
-        }
-    }
-    
-    private func parseImportedDict(_ content: String, fileExtension: String) -> [DictEntry] {
-        var entries: [DictEntry] = []
-        let lines = content.components(separatedBy: .newlines)
-        
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty { continue }
+            if trimmed.hasPrefix("---") ||
+               trimmed.hasPrefix("name:") ||
+               trimmed.hasPrefix("version:") ||
+               trimmed.hasPrefix("sort:") ||
+               trimmed.hasPrefix("use_preset_vocabulary:") {
+                continue
+            }
             
-            if fileExtension.lowercased() == "csv" {
-                let parts = trimmed.components(separatedBy: ",")
-                if parts.count >= 2 {
-                    let word = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-                    let code = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-                    let weight = parts.count > 2 ? Int(parts[2].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0 : 0
-                    entries.append(DictEntry(word: word, code: code, weight: weight))
-                }
-            } else {
-                // 文本格式：词汇 编码 [权重]
-                let parts = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            if inDataSection {
+                let parts = trimmed.components(separatedBy: CharacterSet.whitespacesAndNewlines).filter { !$0.isEmpty }
                 if parts.count >= 2 {
                     let word = parts[0]
                     let code = parts[1]
@@ -323,23 +258,12 @@ struct DictManagerView: View {
         return entries
     }
     
-    private func handleExport(_ result: Result<URL, Error>) {
-        switch result {
-        case .success(let url):
-            print("导出成功到: \(url.path)")
-        case .failure(let error):
-            print("导出失败: \(error)")
-        }
-    }
-    
     private func saveUserDict() {
-        // 保存到真实的 Rime 用户词典文件
-        let rimeDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Rime")
+        let rimeDir = rimeManager.rimeUserDir
         let userDictFile = rimeDir.appendingPathComponent("user.dict.yaml")
         
         var yamlContent = """
 # Rime 用户词典
-# 格式：词汇 编码 [权重]
 
 ---
 name: user
@@ -351,18 +275,77 @@ use_preset_vocabulary: true
 """
         
         for entry in userDictEntries.sorted(by: { $0.weight > $1.weight }) {
-            yamlContent += "\(entry.word)\t\(entry.code)"
             if entry.weight > 0 {
-                yamlContent += "\t\(entry.weight)"
+                yamlContent += "\(entry.word)\t\(entry.code)\t\(entry.weight)\n"
+            } else {
+                yamlContent += "\(entry.word)\t\(entry.code)\n"
             }
-            yamlContent += "\n"
         }
         
         do {
             try yamlContent.write(to: userDictFile, atomically: true, encoding: .utf8)
-            print("用户词典保存成功")
+            print("保存成功到: \(userDictFile.path)")
         } catch {
-            print("保存用户词典失败: \(error)")
+            print("保存失败: \(error)")
+        }
+    }
+    
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            do {
+                let content = try String(contentsOf: url)
+                let importedEntries = parseImportedDict(content)
+                userDictEntries.append(contentsOf: importedEntries)
+            } catch {
+                print("导入失败: \(error)")
+            }
+        case .failure(let error):
+            print("文件选择失败: \(error)")
+        }
+    }
+    
+    private func parseImportedDict(_ content: String) -> [DictEntry] {
+        var entries: [DictEntry] = []
+        let lines = content.components(separatedBy: .newlines)
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            
+            let parts = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            if parts.count >= 2 {
+                let word = parts[0]
+                let code = parts[1]
+                let weight = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
+                entries.append(DictEntry(word: word, code: code, weight: weight))
+            }
+        }
+        
+        return entries
+    }
+    
+    private func exportDictionary() {
+        let savePanel = NSSavePanel()
+        savePanel.title = "导出用户词典"
+        savePanel.nameFieldStringValue = "用户词典.txt"
+        savePanel.allowedContentTypes = [UTType.plainText]
+        
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                var content = "# 用户词典导出\n\n"
+                for entry in userDictEntries {
+                    content += "\(entry.word)\t\(entry.code)\t\(entry.weight)\n"
+                }
+                
+                do {
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                    print("导出成功")
+                } catch {
+                    print("导出失败: \(error)")
+                }
+            }
         }
     }
     
@@ -371,64 +354,6 @@ use_preset_vocabulary: true
     }
 }
 
-// MARK: - 词汇行视图
-struct DictEntryRowView: View {
-    let entry: DictEntry
-    let isSelected: Bool
-    let onSelect: () -> Void
-    let onEdit: () -> Void
-    let onDelete: () -> Void
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.word)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                HStack {
-                    Text(entry.code)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.secondary)
-                    
-                    Spacer()
-                    
-                    Text("权重: \(entry.weight)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-            
-            HStack(spacing: 8) {
-                Button(action: onEdit) {
-                    Image(systemName: "pencil")
-                        .foregroundColor(.blue)
-                }
-                .buttonStyle(.plain)
-                .help("编辑")
-                
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .foregroundColor(.red)
-                }
-                .buttonStyle(.plain)
-                .help("删除")
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
-        .cornerRadius(6)
-        .onTapGesture {
-            onSelect()
-        }
-    }
-}
-
-// MARK: - 添加词汇视图
 struct AddDictEntryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var word = ""
@@ -441,42 +366,13 @@ struct AddDictEntryView: View {
         VStack(spacing: 20) {
             Text("添加词汇")
                 .font(.title2)
-                .fontWeight(.semibold)
             
             Form {
-                Section("词汇信息") {
-                    TextField("词汇", text: $word)
-                        .help("要添加的词汇")
-                    
-                    TextField("编码", text: $code)
-                        .help("拼音或其他输入编码")
-                    
-                    HStack {
-                        Text("权重")
-                        Spacer()
-                        TextField("权重", value: $weight, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                    }
-                    .help("权重越高，词汇越容易被选中")
-                }
-                
-                Section("预览") {
-                    HStack {
-                        Text("预览")
-                        Spacer()
-                        if !word.isEmpty && !code.isEmpty {
-                            Text("\(word) [\(code)]")
-                                .font(.system(.body, design: .monospaced))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(4)
-                        }
-                    }
-                }
+                TextField("词汇", text: $word)
+                TextField("编码", text: $code)
+                TextField("权重", value: $weight, format: .number)
             }
-            .formStyle(.grouped)
+            .frame(width: 300)
             
             HStack {
                 Button("取消") {
@@ -494,11 +390,10 @@ struct AddDictEntryView: View {
             }
         }
         .padding()
-        .frame(width: 400, height: 350)
+        .frame(width: 400, height: 300)
     }
 }
 
-// MARK: - 编辑词汇视图
 struct EditDictEntryView: View {
     let entry: DictEntry
     let onSave: (DictEntry) -> Void
@@ -520,42 +415,13 @@ struct EditDictEntryView: View {
         VStack(spacing: 20) {
             Text("编辑词汇")
                 .font(.title2)
-                .fontWeight(.semibold)
             
             Form {
-                Section("词汇信息") {
-                    TextField("词汇", text: $word)
-                        .help("要编辑的词汇")
-                    
-                    TextField("编码", text: $code)
-                        .help("拼音或其他输入编码")
-                    
-                    HStack {
-                        Text("权重")
-                        Spacer()
-                        TextField("权重", value: $weight, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                    }
-                    .help("权重越高，词汇越容易被选中")
-                }
-                
-                Section("预览") {
-                    HStack {
-                        Text("预览")
-                        Spacer()
-                        if !word.isEmpty && !code.isEmpty {
-                            Text("\(word) [\(code)] - \(weight)")
-                                .font(.system(.body, design: .monospaced))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(4)
-                        }
-                    }
-                }
+                TextField("词汇", text: $word)
+                TextField("编码", text: $code)
+                TextField("权重", value: $weight, format: .number)
             }
-            .formStyle(.grouped)
+            .frame(width: 300)
             
             HStack {
                 Button("取消") {
@@ -573,43 +439,6 @@ struct EditDictEntryView: View {
             }
         }
         .padding()
-        .frame(width: 400, height: 350)
+        .frame(width: 400, height: 300)
     }
-}
-
-// MARK: - 文档类型定义
-struct DictDocument: FileDocument {
-    let entries: [DictEntry]
-    
-    static var readableContentTypes: [UTType] = [.plainText]
-    
-    init(entries: [DictEntry]) {
-        self.entries = entries
-    }
-    
-    init(configuration: ReadConfiguration) throws {
-        entries = []
-    }
-    
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        var content = "# 用户词典导出\n# 格式：词汇 编码 权重\n\n"
-        
-        for entry in entries {
-            content += "\(entry.word)\t\(entry.code)\t\(entry.weight)\n"
-        }
-        
-        return FileWrapper(regularFileWithContents: content.data(using: .utf8) ?? Data())
-    }
-}
-
-// List样式扩展
-extension View {
-    func alternatingRowBackgrounds() -> some View {
-        self
-    }
-}
-
-#Preview {
-    DictManagerView(rimeManager: RimeManager())
-        .frame(width: 900, height: 700)
 }
