@@ -12,6 +12,8 @@ struct DictManagerView: View {
     @State private var editing: DictEntry?
     @State private var newName = "custom"
     @State private var error: String?
+    @State private var pendingImport: DictionaryImportResult?
+    @State private var showingImportPreview = false
 
     private var filtered: [DictEntry] {
         search.isEmpty ? entries : entries.filter { $0.word.localizedCaseInsensitiveContains(search) || $0.code.localizedCaseInsensitiveContains(search) }
@@ -34,7 +36,7 @@ struct DictManagerView: View {
             HStack {
                 TextField("搜索词汇或编码", text: $search)
                 Button("添加词汇") { showingAdd = true }.disabled(selectedFile == nil)
-                Button("导入词条") { showingImport = true }.disabled(selectedFile == nil)
+                Button("导入文本词库") { showingImport = true }.disabled(selectedFile == nil)
                 Button("导出词典") { exportDictionary() }.disabled(selectedFile == nil)
             }
             List {
@@ -72,8 +74,32 @@ struct DictManagerView: View {
                 guard let url = try result.get().first else { return }
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                entries.append(contentsOf: parse(try String(contentsOf: url, encoding: .utf8)))
+                pendingImport = try DictionaryImport.read(Data(contentsOf: url))
+                showingImportPreview = true
             } catch { self.error = error.localizedDescription }
+        }
+        .sheet(isPresented: $showingImportPreview) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("确认导入词条").font(.title2)
+                Text("格式：\(pendingImport?.format ?? "")；可导入 \(pendingImport?.entries.count ?? 0) 条，跳过 \(pendingImport?.skipped ?? 0) 行。")
+                Text("预览前 10 条；相同词语与编码将保留现有词条。导入后仍需点击保存词典。")
+                    .foregroundColor(.secondary)
+                List(Array((pendingImport?.entries ?? []).prefix(10))) { entry in
+                    HStack { Text(entry.word); Spacer(); Text(entry.code); Text("\(entry.weight)") }
+                }
+                HStack {
+                    Spacer()
+                    Button("取消") { showingImportPreview = false; pendingImport = nil }
+                    Button("导入到当前词典") {
+                        let existing = Set(entries.map { "\($0.word)\t\($0.code)" })
+                        var seen = existing
+                        for entry in pendingImport?.entries ?? [] {
+                            if seen.insert("\(entry.word)\t\(entry.code)").inserted { entries.append(entry) }
+                        }
+                        showingImportPreview = false; pendingImport = nil
+                    }.buttonStyle(.borderedProminent)
+                }
+            }.padding().frame(width: 600, height: 420)
         }
         .alert("操作失败", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("确定") { error = nil }
@@ -122,6 +148,7 @@ struct DictManagerView: View {
             try FileManager.default.createDirectory(at: rimeManager.rimeUserDir, withIntermediateDirectories: true)
             try "---\nname: \(newName)\nversion: \"1.0\"\nsort: by_weight\n...\n".write(to: url, atomically: true, encoding: .utf8)
             refresh(); selectedFile = url
+            error = "词典已创建。要让输入方案使用它，还需要在相应方案中配置 import_tables 或 translator/packs。"
         } catch { error = error.localizedDescription }
     }
 
