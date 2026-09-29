@@ -200,7 +200,9 @@ final class RimeManager: ObservableObject {
     func saveSchemaSwitches(schemaId: String, selections: [Int: Int]) {
         do {
             let switches = try schemaSwitches(for: schemaId)
-            guard !switches.isEmpty, switches.allSatisfy({ selections[$0.index].map { (0..<$0.states.count).contains($0) } ?? false }) else {
+            guard !switches.isEmpty, switches.allSatisfy({ item in
+                selections[item.index].map { selectedIndex in (0..<item.states.count).contains(selectedIndex) } ?? false
+            }) else {
                 errorMessage = "输入状态设置无效"; return
             }
             let lines = switches.map { "  \"switches/@\($0.index)/reset\": \(selections[$0.index]!)" }.joined(separator: "\n")
