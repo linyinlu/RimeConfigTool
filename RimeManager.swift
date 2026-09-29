@@ -40,6 +40,8 @@ final class RimeManager: ObservableObject {
     @Published var isRimeInstalled = false
     @Published var schemas: [RimeSchema] = []
     @Published var currentTheme = RimeTheme.default
+    @Published var pageSize = 5
+    @Published var switcherHotkey = "Control+grave"
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var customConfigPath = "" {
@@ -69,6 +71,8 @@ final class RimeManager: ObservableObject {
             let defaults = try readIfExists("default.yaml")
             let patch = try readIfExists("default.custom.yaml")
             let enabled = Set(parseSchemaIDs(patch).isEmpty ? parseSchemaIDs(defaults) : parseSchemaIDs(patch))
+            pageSize = Int(scalar("menu/page_size", in: patch) ?? scalar("menu/page_size", in: defaults) ?? "5") ?? 5
+            switcherHotkey = firstSwitcherHotkey(in: patch) ?? firstSwitcherHotkey(in: defaults) ?? "Control+grave"
             let files = (try? FileManager.default.contentsOfDirectory(at: rimeUserDir, includingPropertiesForKeys: nil)) ?? []
             schemas = files.filter { $0.lastPathComponent.hasSuffix(".schema.yaml") }
                 .compactMap { url -> RimeSchema? in
@@ -102,10 +106,19 @@ final class RimeManager: ObservableObject {
     private func scalar(_ key: String, in text: String) -> String? {
         for line in text.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix(key + ":") || trimmed.hasPrefix("style/" + key + ":") else { continue }
+            guard trimmed.hasPrefix(key + ":") || trimmed.hasPrefix("\"" + key + "\":") || trimmed.hasPrefix("style/" + key + ":") else { continue }
             return String(trimmed.split(separator: ":", maxSplits: 1).last ?? "").trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
         }
         return nil
+    }
+
+    private func firstSwitcherHotkey(in text: String) -> String? {
+        let lines = text.components(separatedBy: .newlines)
+        guard let index = lines.firstIndex(where: { $0.contains("switcher/hotkeys") && $0.trimmingCharacters(in: .whitespaces).hasSuffix(":") }) else { return nil }
+        guard index + 1 < lines.count else { return nil }
+        let line = lines[index + 1].trimmingCharacters(in: .whitespaces)
+        guard line.hasPrefix("- ") else { return nil }
+        return String(line.dropFirst(2)).trimmingCharacters(in: CharacterSet(charactersIn: "\"' "))
     }
 
     private func parseSchemaIDs(_ text: String) -> [String] {
@@ -137,8 +150,63 @@ final class RimeManager: ObservableObject {
         guard items.contains(where: { $0.enabled }) else { errorMessage = "至少启用一个输入方案"; return }
         let list = items.filter(\.enabled).map { "    - schema: \($0.schemaId)" }.joined(separator: "\n")
         do {
-            try writePatch("patch:\n  schema_list:\n\(list)\n", name: "default.custom.yaml")
+            try writePatch("patch:\n  schema_list:\n\(list)\n  \"menu/page_size\": \(pageSize)\n  \"switcher/hotkeys\":\n    - \"\(switcherHotkey)\"\n", name: "default.custom.yaml")
             schemas = items
+            deployRime()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func saveGeneralSettings(pageSize: Int, hotkey: String) {
+        guard (1...9).contains(pageSize) else { errorMessage = "每页候选数须为 1 至 9"; return }
+        let parts = hotkey.split(separator: "+").map(String.init)
+        let modifiers = Set(["Control", "Shift", "Alt"])
+        guard parts.count >= 2, parts.dropLast().allSatisfy({ modifiers.contains($0) }),
+              parts.last?.range(of: "^[A-Za-z0-9_]+$", options: .regularExpression) != nil else {
+            errorMessage = "快捷键格式示例：Control+grave 或 Control+Shift+space"; return
+        }
+        self.pageSize = pageSize
+        switcherHotkey = hotkey
+        saveSchemaList(schemas)
+    }
+
+    func schemaSwitches(for schemaId: String) throws -> [SchemaSwitchSetting] {
+        guard schemaId.range(of: "^[A-Za-z0-9_]+$", options: .regularExpression) != nil else { return [] }
+        let url = rimeUserDir.appendingPathComponent("\(schemaId).schema.yaml")
+        let content = try String(contentsOf: url, encoding: .utf8)
+        var active = false
+        var items: [SchemaSwitchSetting] = []
+        var currentName: String?
+        var switchIndex = -1
+        for line in content.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "switches:" { active = true; continue }
+            if active && !line.hasPrefix(" ") && !trimmed.isEmpty && !trimmed.hasPrefix("#") { break }
+            guard active else { continue }
+            if trimmed.hasPrefix("- name:") {
+                switchIndex += 1
+                currentName = String(trimmed.dropFirst("- name:".count)).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("states:"), let name = currentName,
+                      let start = trimmed.firstIndex(of: "["), let end = trimmed.lastIndex(of: "]") {
+                let labels = trimmed[trimmed.index(after: start)..<end].split(separator: ",").map {
+                    String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                if labels.count >= 2 { items.append(SchemaSwitchSetting(index: switchIndex, name: name, states: labels)) }
+                currentName = nil
+            }
+        }
+        return items
+    }
+
+    func saveSchemaSwitches(schemaId: String, selections: [Int: Int]) {
+        do {
+            let switches = try schemaSwitches(for: schemaId)
+            guard !switches.isEmpty, switches.allSatisfy({ item in
+                selections[item.index].map { selectedIndex in (0..<item.states.count).contains(selectedIndex) } ?? false
+            }) else {
+                errorMessage = "输入状态设置无效"; return
+            }
+            let lines = switches.map { "  \"switches/@\($0.index)/reset\": \(selections[$0.index]!)" }.joined(separator: "\n")
+            try writePatch("patch:\n\(lines)\n", name: "\(schemaId).custom.yaml")
             deployRime()
         } catch { errorMessage = error.localizedDescription }
     }

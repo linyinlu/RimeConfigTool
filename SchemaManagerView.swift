@@ -174,13 +174,15 @@ struct SchemaRowView: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .sheet(isPresented: $showingDetails) {
-            SchemaDetailView(schema: schema)
+            SchemaDetailView(schema: schema, rimeManager: rimeManager)
         }
     }
 }
 
 struct SchemaDetailView: View {
     let schema: RimeSchema
+    @ObservedObject var rimeManager: RimeManager
+    @State private var showingSwitches = false
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -198,6 +200,8 @@ struct SchemaDetailView: View {
                     if let description = schema.description {
                         InfoRow(label: "描述", value: description)
                     }
+                    Button("设置默认中英文与简繁状态") { showingSwitches = true }
+                        .buttonStyle(.bordered)
                 }
                 
                 Spacer()
@@ -213,6 +217,9 @@ struct SchemaDetailView: View {
             }
         }
         .frame(width: 500, height: 400)
+        .sheet(isPresented: $showingSwitches) {
+            SchemaSwitchView(rimeManager: rimeManager, schema: schema)
+        }
     }
 }
 

@@ -3,6 +3,10 @@ import SwiftUI
 struct GeneralConfigView: View {
     @ObservedObject var rimeManager: RimeManager
     @State private var showingRimeDirectory = false
+    @State private var backupMessage: String?
+    @State private var backupError: String?
+    @State private var editingPageSize = 5
+    @State private var editingHotkey = "Control+grave"
     
     var body: some View {
         VStack(spacing: 0) {
@@ -170,6 +174,30 @@ struct GeneralConfigView: View {
                         .padding()
                     }
                     
+                    GroupBox("候选与快捷键") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Stepper("每页候选数：\(editingPageSize)", value: $editingPageSize, in: 1...9)
+                            TextField("方案选单快捷键", text: $editingHotkey)
+                            Text("使用 Rime 键名，例如 Control+grave、Control+Shift+space。具体切换简体、繁体和英文由当前输入方案的开关决定。")
+                                .font(.caption).foregroundColor(.secondary)
+                            Button("保存候选与快捷键") {
+                                rimeManager.saveGeneralSettings(pageSize: editingPageSize, hotkey: editingHotkey)
+                            }.buttonStyle(.borderedProminent)
+                        }.padding()
+                    }
+
+                    GroupBox("词库与配置备份") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("选择 iCloud Drive、OneDrive、Dropbox、Google Drive 的本机同步文件夹，或任意本地文件夹。备份是一次性快照，不会自动同步或连接云盘账号。")
+                                .foregroundColor(.secondary)
+                            Button("选择备份文件夹并创建快照") { chooseBackupFolder() }
+                                .buttonStyle(.borderedProminent)
+                            if let backupMessage { Text(backupMessage).textSelection(.enabled) }
+                            Text("包含配置目录顶层的 YAML、TXT、LUA 文件；不包含自动学习的二进制词库。")
+                                .font(.caption).foregroundColor(.secondary)
+                        }.padding()
+                    }
+
                     // 关于信息
                     GroupBox("关于") {
                         VStack(alignment: .leading, spacing: 8) {
@@ -201,11 +229,33 @@ struct GeneralConfigView: View {
                 .padding()
             }
         }
+        .onAppear {
+            editingPageSize = rimeManager.pageSize
+            editingHotkey = rimeManager.switcherHotkey
+        }
+        .alert("备份失败", isPresented: Binding(get: { backupError != nil }, set: { if !$0 { backupError = nil } })) {
+            Button("确定") { backupError = nil }
+        } message: { Text(backupError ?? "") }
         .sheet(isPresented: $showingRimeDirectory) {
             RimeDirectoryView(rimeManager: rimeManager)
         }
     }
     
+    private func chooseBackupFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "选择备份目标文件夹"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do { backupMessage = "已创建：\(try BackupService.create(source: rimeManager.rimeUserDir, destinationFolder: url).path)" }
+            catch { backupError = error.localizedDescription }
+        }
+    }
+
     // MARK: - 辅助方法
     private func openRimeConfigDirectory() {
         let rimeConfigURL = rimeManager.rimeUserDir

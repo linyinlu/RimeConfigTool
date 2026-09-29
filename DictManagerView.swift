@@ -11,7 +11,10 @@ struct DictManagerView: View {
     @State private var showingImport = false
     @State private var editing: DictEntry?
     @State private var newName = "custom"
-    @State private var error: String?
+    @State private var errorText: String?
+    @State private var notice: String?
+    @State private var pendingImport: DictionaryImportResult?
+    @State private var showingImportPreview = false
 
     private var filtered: [DictEntry] {
         search.isEmpty ? entries : entries.filter { $0.word.localizedCaseInsensitiveContains(search) || $0.code.localizedCaseInsensitiveContains(search) }
@@ -34,7 +37,7 @@ struct DictManagerView: View {
             HStack {
                 TextField("搜索词汇或编码", text: $search)
                 Button("添加词汇") { showingAdd = true }.disabled(selectedFile == nil)
-                Button("导入词条") { showingImport = true }.disabled(selectedFile == nil)
+                Button("导入文本词库") { showingImport = true }.disabled(selectedFile == nil)
                 Button("导出词典") { exportDictionary() }.disabled(selectedFile == nil)
             }
             List {
@@ -48,6 +51,7 @@ struct DictManagerView: View {
                     }
                 }
             }
+            if let notice { Text(notice).font(.caption).foregroundColor(.secondary) }
             HStack {
                 Text("共 \(entries.count) 条 · 保存仅修改当前选中的词典")
                 Spacer()
@@ -72,12 +76,36 @@ struct DictManagerView: View {
                 guard let url = try result.get().first else { return }
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                entries.append(contentsOf: parse(try String(contentsOf: url, encoding: .utf8)))
-            } catch { self.error = error.localizedDescription }
+                pendingImport = try DictionaryImport.read(Data(contentsOf: url))
+                showingImportPreview = true
+            } catch { self.errorText = error.localizedDescription }
         }
-        .alert("操作失败", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button("确定") { error = nil }
-        } message: { Text(error ?? "") }
+        .sheet(isPresented: $showingImportPreview) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("确认导入词条").font(.title2)
+                Text("格式：\(pendingImport?.format ?? "")；可导入 \(pendingImport?.entries.count ?? 0) 条，跳过 \(pendingImport?.skipped ?? 0) 行。")
+                Text("预览前 10 条；相同词语与编码将保留现有词条。导入后仍需点击保存词典。")
+                    .foregroundColor(.secondary)
+                List(Array((pendingImport?.entries ?? []).prefix(10))) { entry in
+                    HStack { Text(entry.word); Spacer(); Text(entry.code); Text("\(entry.weight)") }
+                }
+                HStack {
+                    Spacer()
+                    Button("取消") { showingImportPreview = false; pendingImport = nil }
+                    Button("导入到当前词典") {
+                        let existing = Set(entries.map { "\($0.word)\t\($0.code)" })
+                        var seen = existing
+                        for entry in pendingImport?.entries ?? [] {
+                            if seen.insert("\(entry.word)\t\(entry.code)").inserted { entries.append(entry) }
+                        }
+                        showingImportPreview = false; pendingImport = nil
+                    }.buttonStyle(.borderedProminent)
+                }
+            }.padding().frame(width: 600, height: 420)
+        }
+        .alert("操作失败", isPresented: Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })) {
+            Button("确定") { errorText = nil }
+        } message: { Text(errorText ?? "") }
     }
 
     private func refresh() {
@@ -88,14 +116,14 @@ struct DictManagerView: View {
             load()
         } catch {
             files = []; selectedFile = nil; entries = []
-            if (error as NSError).code != NSFileReadNoSuchFileError { self.error = error.localizedDescription }
+            if (error as NSError).code != NSFileReadNoSuchFileError { self.errorText = error.localizedDescription }
         }
     }
 
     private func load() {
         guard let url = selectedFile else { entries = []; return }
         do { entries = parse(try String(contentsOf: url, encoding: .utf8)) }
-        catch { error = error.localizedDescription }
+        catch { errorText = error.localizedDescription }
     }
 
     private func parse(_ content: String) -> [DictEntry] {
@@ -114,35 +142,46 @@ struct DictManagerView: View {
 
     private func createDictionary() {
         guard !newName.isEmpty, newName.range(of: "^[a-zA-Z][a-zA-Z0-9_]*$", options: .regularExpression) != nil else {
-            error = "词典名称须以英文字母开头，只含字母、数字和下划线"; return
+            errorText = "词典名称须以英文字母开头，只含字母、数字和下划线"; return
         }
         let url = rimeManager.rimeUserDir.appendingPathComponent("\(newName).dict.yaml")
-        guard !FileManager.default.fileExists(atPath: url.path) else { error = "同名词典已存在"; return }
+        guard !FileManager.default.fileExists(atPath: url.path) else { errorText = "同名词典已存在"; return }
         do {
             try FileManager.default.createDirectory(at: rimeManager.rimeUserDir, withIntermediateDirectories: true)
             try "---\nname: \(newName)\nversion: \"1.0\"\nsort: by_weight\n...\n".write(to: url, atomically: true, encoding: .utf8)
             refresh(); selectedFile = url
-        } catch { error = error.localizedDescription }
+            notice = "词典已创建。还需在对应方案配置 import_tables 或 translator/packs，才能进入候选。"
+        } catch { errorText = error.localizedDescription }
     }
 
     private func save() {
         guard let url = selectedFile else { return }
         guard entries.allSatisfy({ !$0.word.isEmpty && !$0.code.isEmpty && !$0.word.contains(where: \.isWhitespace) && !$0.code.contains(where: \.isWhitespace) }) else {
-            error = "词条和编码不能为空或含空白字符"; return
+            errorText = "词条和编码不能为空或含空白字符"; return
         }
         do {
             let old = try String(contentsOf: url, encoding: .utf8)
             guard let marker = old.range(of: "...", options: .anchored, range: old.startIndex..<old.endIndex) ?? old.range(of: "\n...\n") else {
-                error = "词典缺少 YAML 正文分隔符 ..."; return
+                errorText = "词典缺少 YAML 正文分隔符 ..."; return
             }
             let header = String(old[..<marker.upperBound]).trimmingCharacters(in: .newlines)
-            let body = entries.map { "\($0.word)\t\($0.code)\t\($0.weight)" }.joined(separator: "\n")
+            let originalBody = String(old[marker.upperBound...])
+            let bodyLines = originalBody.components(separatedBy: .newlines)
+            let comments = bodyLines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
+            // 无法解析的正文行不应被静默删除。
+            let unknown = bodyLines.filter { line in
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty || trimmed.hasPrefix("#") { return false }
+                return trimmed.split(whereSeparator: \.isWhitespace).count < 2
+            }
+            guard unknown.isEmpty else { errorText = "词典包含无法解析的正文行，已停止保存以避免丢失数据"; return }
+            let body = (comments + entries.map { "\($0.word)\t\($0.code)\t\($0.weight)" }).joined(separator: "\n")
             let backup = url.appendingPathExtension("backup")
             if FileManager.default.fileExists(atPath: backup.path) { try FileManager.default.removeItem(at: backup) }
             try FileManager.default.copyItem(at: url, to: backup)
             try "\(header)\n\(body)\n".write(to: url, atomically: true, encoding: .utf8)
             rimeManager.deployRime()
-        } catch { error = error.localizedDescription }
+        } catch { errorText = error.localizedDescription }
     }
 
     private func exportDictionary() {
@@ -153,7 +192,7 @@ struct DictManagerView: View {
         panel.begin { response in
             guard response == .OK, let destination = panel.url else { return }
             do { try Data(contentsOf: url).write(to: destination, options: .atomic) }
-            catch { error = error.localizedDescription }
+            catch { errorText = error.localizedDescription }
         }
     }
 }
