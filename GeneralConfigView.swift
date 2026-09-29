@@ -40,7 +40,7 @@ struct GeneralConfigView: View {
                                         .font(.headline)
                                     
                                     Text(rimeManager.isRimeInstalled ?
-                                         "配置目录: ~/Library/Rime" :
+                                         "配置目录: \(rimeManager.rimeUserDir.path)" :
                                          "请检查鼠须管是否正确安装")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
@@ -234,7 +234,7 @@ struct GeneralConfigView: View {
         openPanel.showsHiddenFiles = true  // 显示隐藏文件夹
         
         // 尝试设置默认路径
-        let userLibraryPath = "/Users/\(NSUserName())/Library"
+        let userLibraryPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library").path
         openPanel.directoryURL = URL(fileURLWithPath: userLibraryPath)
         
         openPanel.begin { response in

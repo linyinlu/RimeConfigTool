@@ -78,6 +78,12 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 600)
+        .alert("Rime 配置操作失败", isPresented: Binding(
+            get: { rimeManager.errorMessage != nil },
+            set: { if !$0 { rimeManager.errorMessage = nil } }
+        )) {
+            Button("确定") { rimeManager.errorMessage = nil }
+        } message: { Text(rimeManager.errorMessage ?? "") }
         .onAppear {
             rimeManager.loadConfigurations()
         }

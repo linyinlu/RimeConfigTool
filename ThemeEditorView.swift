@@ -390,13 +390,11 @@ extension Color {
     }
     
     func toHexString() -> String {
-        let components = self.cgColor?.components
-        let r: CGFloat = components?[0] ?? 0.0
-        let g: CGFloat = components?[1] ?? 0.0
-        let b: CGFloat = components?[2] ?? 0.0
-        
-        let hexString = String(format: "0x%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
-        return hexString
+        guard let rgb = NSColor(self).usingColorSpace(.deviceRGB) else { return "0x000000" }
+        return String(format: "0x%02X%02X%02X",
+                      Int((rgb.redComponent * 255).rounded()),
+                      Int((rgb.greenComponent * 255).rounded()),
+                      Int((rgb.blueComponent * 255).rounded()))
     }
 }
 

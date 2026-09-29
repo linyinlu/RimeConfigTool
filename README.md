@@ -1,65 +1,24 @@
 # RimeConfigTool
-Provide visualized GUI for Rime IME in Mac
 
-主要功能模块
+macOS 上的 Rime（鼠须管）可视化配置工具，管理输入方案、主题和 `.dict.yaml` 文本词典。
 
-主应用 (RimeConfigToolApp.swift) - SwiftUI 应用入口，提供现代化的侧边栏导航界面
+## 构建
 
-核心管理器 (RimeManager.swift) - 负责：
+需要 macOS、Xcode 和 [XcodeGen](https://github.com/yonaskolb/XcodeGen)。在仓库目录执行：
 
-- Rime 安装状态检测
-- 配置文件读写（YAML格式）
-- 输入方案管理
-- 主题配置
-- 自动部署功能
+```sh
+brew install xcodegen
+xcodegen generate
+open RimeConfigTool.xcodeproj
+```
 
+在 Xcode 中选择 RimeConfigTool scheme 运行。仓库原有工程缺少 `project.pbxproj`，所以使用 `project.yml` 生成工程。应用不启用 App Sandbox，才能访问当前用户的 `~/Library/Rime`；不要将这一配置用于 Mac App Store 分发。
 
-基本设置 (GeneralConfigView.swift) - 提供：
+## 使用和限制
 
-- Rime 状态监控
-- 候选词和分页设置
-- 快捷操作（部署、备份等）
-- 目录访问功能
+- 默认目录是当前用户的 `~/Library/Rime`，可在基本设置里选择已有的其他目录。
+- 词库页只修改当前选中的文本 `.dict.yaml`，可以新建、导入词条、编辑、导出；保存前生成 `.backup`。Rime 自动学习的二进制用户词典不在本工具的编辑范围内。
+- 输入方案从本地 `.schema.yaml` 发现；仅启用/停用已有方案。首次保存会创建 `default.custom.yaml`，主题会创建 `squirrel.custom.yaml`。已有的手写 custom 文件会拒绝覆盖，以免丢失其他设置。工具管理的文件在再次保存前备份为 `.backup`。
+- 保存后尝试调用 Squirrel `--reload`；若本机版本不支持，请在鼠须管菜单中手动重新部署。使用前请备份整个 Rime 配置目录。
 
-
-方案管理 (SchemaManagerView.swift) - 支持：
-
-- 可视化启用/禁用输入方案
-- 方案搜索和筛选
-- 方案详情查看
-- 添加自定义方案
-
-
-主题编辑器 (ThemeEditorView.swift) - 包含：
-
-- 实时主题预览
-- 可视化颜色编辑
-- 布局和样式设置
-- 候选框效果预览
-
-
-词库管理 (DictManagerView.swift) - 提供：
-
-- 用户词典可视化管理
-- 词汇增删改查
-- 导入/导出功能
-- 多格式支持
-
-技术特点
-
-- Swift + SwiftUI 开发，现代化界面
-- 直接操作 Rime 配置文件，无需额外安装
-- 实时预览功能，所见即所得
-- 完整的错误处理和用户反馈
-- 模块化设计，易于扩展维护
-
-操作系统：macOS 26.0 Beta (25A5349a)
-Chip: Apple M1 Max
-Memory: 64G
-Xcode: 16.4 (16F6)
-
-
-2025-08-28 - 现存Bug，请勿直接编译安装，修复处理中：
-1. 无法调用macOS调色板
-2. 无法导出词典（引发程序退出）
-3. Rime配置文件夹错误
+目前没有在 macOS/Xcode 环境中完成编译和实际鼠须管部署验证。

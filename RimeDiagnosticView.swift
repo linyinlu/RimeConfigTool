@@ -185,14 +185,3 @@ struct DiagnosticRowView: View {
         .padding(.vertical, 4)
     }
 }
-
-// 添加到 GeneralConfigView 中
-extension GeneralConfigView {
-    private func showDiagnostic() {
-        // 在 GeneralConfigView 中添加一个状态变量
-        // @State private var showingDiagnostic = false
-        
-        // 然后在按钮中调用
-        // showingDiagnostic = true
-    }
-}
