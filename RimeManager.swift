@@ -169,6 +169,46 @@ final class RimeManager: ObservableObject {
         saveSchemaList(schemas)
     }
 
+    func schemaSwitches(for schemaId: String) throws -> [SchemaSwitchSetting] {
+        guard schemaId.range(of: "^[A-Za-z0-9_]+$", options: .regularExpression) != nil else { return [] }
+        let url = rimeUserDir.appendingPathComponent("\(schemaId).schema.yaml")
+        let content = try String(contentsOf: url, encoding: .utf8)
+        var active = false
+        var items: [SchemaSwitchSetting] = []
+        var currentName: String?
+        var switchIndex = -1
+        for line in content.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "switches:" { active = true; continue }
+            if active && !line.hasPrefix(" ") && !trimmed.isEmpty && !trimmed.hasPrefix("#") { break }
+            guard active else { continue }
+            if trimmed.hasPrefix("- name:") {
+                switchIndex += 1
+                currentName = String(trimmed.dropFirst("- name:".count)).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("states:"), let name = currentName,
+                      let start = trimmed.firstIndex(of: "["), let end = trimmed.lastIndex(of: "]") {
+                let labels = trimmed[trimmed.index(after: start)..<end].split(separator: ",").map {
+                    String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                if labels.count >= 2 { items.append(SchemaSwitchSetting(index: switchIndex, name: name, states: labels)) }
+                currentName = nil
+            }
+        }
+        return items
+    }
+
+    func saveSchemaSwitches(schemaId: String, selections: [Int: Int]) {
+        do {
+            let switches = try schemaSwitches(for: schemaId)
+            guard !switches.isEmpty, switches.allSatisfy({ selections[$0.index].map { (0..<$0.states.count).contains($0) } ?? false }) else {
+                errorMessage = "输入状态设置无效"; return
+            }
+            let lines = switches.map { "  \"switches/@\($0.index)/reset\": \(selections[$0.index]!)" }.joined(separator: "\n")
+            try writePatch("patch:\n\(lines)\n", name: "\(schemaId).custom.yaml")
+            deployRime()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func saveTheme(_ theme: RimeTheme) {
         let values: [(String, String)] = [
             ("horizontal", "\(theme.horizontal)"), ("inline_preedit", "\(theme.inlinePreedit)"),
