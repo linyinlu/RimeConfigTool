@@ -1,11 +1,20 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// 编辑会话由 ContentView 持有，切换侧边栏页面时仍保留未保存的词条。
+@MainActor
+final class DictionaryDraft: ObservableObject {
+    @Published var entries: [DictEntry] = []
+    @Published var files: [URL] = []
+    @Published var selectedFile: URL?
+    @Published var isDirty = false
+    var loadedDirectory: URL?
+    var loadedContent: String?
+}
+
 struct DictManagerView: View {
     @ObservedObject var rimeManager: RimeManager
-    @State private var entries: [DictEntry] = []
-    @State private var files: [URL] = []
-    @State private var selectedFile: URL?
+    @ObservedObject var draft: DictionaryDraft
     @State private var search = ""
     @State private var showingAdd = false
     @State private var showingImport = false
@@ -15,30 +24,43 @@ struct DictManagerView: View {
     @State private var notice: String?
     @State private var pendingImport: DictionaryImportResult?
     @State private var showingImportPreview = false
+    @State private var pendingAction: PendingAction?
+    @State private var showingUnsavedAlert = false
+
+    private enum PendingAction {
+        case select(URL?)
+        case refresh
+    }
 
     private var filtered: [DictEntry] {
-        search.isEmpty ? entries : entries.filter { $0.word.localizedCaseInsensitiveContains(search) || $0.code.localizedCaseInsensitiveContains(search) }
+        search.isEmpty ? draft.entries : draft.entries.filter { $0.word.localizedCaseInsensitiveContains(search) || $0.code.localizedCaseInsensitiveContains(search) }
     }
 
     var body: some View {
         VStack {
             HStack {
                 Text("词库管理").font(.title2)
-                Picker("词典", selection: $selectedFile) {
+                Picker("词典", selection: Binding(
+                    get: { draft.selectedFile },
+                    set: { request(.select($0)) }
+                )) {
                     Text("选择词典").tag(URL?.none)
-                    ForEach(files, id: \.self) { Text($0.lastPathComponent).tag(Optional($0)) }
+                    ForEach(draft.files, id: \.self) { Text($0.lastPathComponent).tag(Optional($0)) }
                 }.frame(maxWidth: 300)
-                Button("刷新") { refresh() }
+                Button("刷新") { request(.refresh) }
             }
             HStack {
                 TextField("新词典名称（英文、数字、下划线）", text: $newName)
                 Button("新建词典") { createDictionary() }
+                    .disabled(draft.isDirty)
+                    .help(draft.isDirty ? "请先保存或放弃当前词典的修改" : "创建空白 Rime 文本词典")
             }
             HStack {
                 TextField("搜索词汇或编码", text: $search)
-                Button("添加词汇") { showingAdd = true }.disabled(selectedFile == nil)
-                Button("导入文本词库") { showingImport = true }.disabled(selectedFile == nil)
-                Button("导出词典") { exportDictionary() }.disabled(selectedFile == nil)
+                Button("添加词汇") { showingAdd = true }.disabled(draft.selectedFile == nil)
+                Button("导入文本词库") { showingImport = true }.disabled(draft.selectedFile == nil)
+                Button(draft.isDirty ? "导出未保存词条" : "导出词典") { exportDictionary() }
+                    .disabled(draft.selectedFile == nil)
             }
             List {
                 ForEach(filtered) { entry in
@@ -47,27 +69,38 @@ struct DictManagerView: View {
                         Text(entry.code).frame(maxWidth: .infinity, alignment: .leading)
                         Text("\(entry.weight)")
                         Button("编辑") { editing = entry }
-                        Button("删除") { entries.removeAll { $0.id == entry.id } }
+                        Button("删除") {
+                            draft.entries.removeAll { $0.id == entry.id }
+                            draft.isDirty = true
+                        }
                     }
                 }
             }
             if let notice { Text(notice).font(.caption).foregroundColor(.secondary) }
             HStack {
-                Text("共 \(entries.count) 条 · 保存仅修改当前选中的词典")
+                Text("共 \(draft.entries.count) 条\(draft.isDirty ? " · 有未保存修改" : "") · 保存仅修改当前选中的词典")
                 Spacer()
-                Button("保存词典") { save() }.disabled(selectedFile == nil)
+                Button("保存词典") { _ = save() }.disabled(draft.selectedFile == nil || !draft.isDirty)
             }
         }
         .padding()
-        .onAppear { refresh() }
-        .onChange(of: selectedFile) { _ in load() }
-        .sheet(isPresented: $showingAdd) { AddDictEntryView { entries.append($0) } }
+        .onAppear {
+            if draft.loadedDirectory == nil { refresh() }
+            else if draft.loadedDirectory != rimeManager.rimeUserDir { request(.refresh) }
+        }
+        .sheet(isPresented: $showingAdd) { AddDictEntryView {
+            draft.entries.append($0)
+            draft.isDirty = true
+        } }
         .sheet(item: $editing) { original in
             EditDictEntryView(entry: original) { updated in
-                if let index = entries.firstIndex(where: { $0.id == original.id }) {
-                    entries[index].word = updated.word
-                    entries[index].code = updated.code
-                    entries[index].weight = updated.weight
+                if let index = draft.entries.firstIndex(where: { $0.id == original.id }) {
+                    if draft.entries[index].word != updated.word || draft.entries[index].code != updated.code || draft.entries[index].weight != updated.weight {
+                        draft.entries[index].word = updated.word
+                        draft.entries[index].code = updated.code
+                        draft.entries[index].weight = updated.weight
+                        draft.isDirty = true
+                    }
                 }
             }
         }
@@ -93,10 +126,13 @@ struct DictManagerView: View {
                     Spacer()
                     Button("取消") { showingImportPreview = false; pendingImport = nil }
                     Button("导入到当前词典") {
-                        let existing = Set(entries.map { "\($0.word)\t\($0.code)" })
+                        let existing = Set(draft.entries.map { "\($0.word)\t\($0.code)" })
                         var seen = existing
                         for entry in pendingImport?.entries ?? [] {
-                            if seen.insert("\(entry.word)\t\(entry.code)").inserted { entries.append(entry) }
+                            if seen.insert("\(entry.word)\t\(entry.code)").inserted {
+                                draft.entries.append(entry)
+                                draft.isDirty = true
+                            }
                         }
                         showingImportPreview = false; pendingImport = nil
                     }.buttonStyle(.borderedProminent)
@@ -106,23 +142,68 @@ struct DictManagerView: View {
         .alert("操作失败", isPresented: Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })) {
             Button("确定") { errorText = nil }
         } message: { Text(errorText ?? "") }
+        .alert("当前词典有未保存的修改", isPresented: $showingUnsavedAlert) {
+            Button("保存后继续") {
+                if save() { completePendingAction() }
+                else { pendingAction = nil }
+            }
+            Button("放弃修改", role: .destructive) { completePendingAction() }
+            Button("取消", role: .cancel) { pendingAction = nil }
+        } message: {
+            Text("切换词典或刷新会重新读取文件，未保存的词条将丢失。")
+        }
+    }
+
+    private func request(_ action: PendingAction) {
+        if draft.isDirty {
+            pendingAction = action
+            showingUnsavedAlert = true
+        } else {
+            perform(action)
+        }
+    }
+
+    private func completePendingAction() {
+        guard let action = pendingAction else { return }
+        pendingAction = nil
+        perform(action)
+    }
+
+    private func perform(_ action: PendingAction) {
+        switch action {
+        case .select(let url):
+            guard url != draft.selectedFile else { return }
+            load(url)
+        case .refresh:
+            refresh()
+        }
     }
 
     private func refresh() {
         do {
-            files = try FileManager.default.contentsOfDirectory(at: rimeManager.rimeUserDir, includingPropertiesForKeys: nil)
+            let files = try FileManager.default.contentsOfDirectory(at: rimeManager.rimeUserDir, includingPropertiesForKeys: nil)
                 .filter { $0.lastPathComponent.hasSuffix(".dict.yaml") }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-            if !files.contains(where: { $0 == selectedFile }) { selectedFile = files.first }
-            load()
+            let selected = files.contains(where: { $0 == draft.selectedFile }) ? draft.selectedFile : files.first
+            load(selected)
+            draft.files = files
+            draft.loadedDirectory = rimeManager.rimeUserDir
         } catch {
-            files = []; selectedFile = nil; entries = []
             if (error as NSError).code != NSFileReadNoSuchFileError { self.errorText = error.localizedDescription }
         }
     }
 
-    private func load() {
-        guard let url = selectedFile else { entries = []; return }
-        do { entries = parse(try String(contentsOf: url, encoding: .utf8)) }
+    private func load(_ url: URL?) {
+        guard let url else {
+            draft.selectedFile = nil; draft.entries = []; draft.loadedContent = nil; draft.isDirty = false
+            return
+        }
+        do {
+            let content = try String(contentsOf: url, encoding: .utf8)
+            draft.entries = parse(content)
+            draft.selectedFile = url
+            draft.loadedContent = content
+            draft.isDirty = false
+        }
         catch { errorText = error.localizedDescription }
     }
 
@@ -141,6 +222,7 @@ struct DictManagerView: View {
     }
 
     private func createDictionary() {
+        guard !draft.isDirty else { errorText = "请先保存或放弃当前词典的修改"; return }
         guard !newName.isEmpty, newName.range(of: "^[a-zA-Z][a-zA-Z0-9_]*$", options: .regularExpression) != nil else {
             errorText = "词典名称须以英文字母开头，只含字母、数字和下划线"; return
         }
@@ -149,20 +231,25 @@ struct DictManagerView: View {
         do {
             try FileManager.default.createDirectory(at: rimeManager.rimeUserDir, withIntermediateDirectories: true)
             try "---\nname: \(newName)\nversion: \"1.0\"\nsort: by_weight\n...\n".write(to: url, atomically: true, encoding: .utf8)
-            refresh(); selectedFile = url
+            refresh(); load(url)
             notice = "词典已创建。还需在对应方案配置 import_tables 或 translator/packs，才能进入候选。"
         } catch { errorText = error.localizedDescription }
     }
 
-    private func save() {
-        guard let url = selectedFile else { return }
-        guard entries.allSatisfy({ !$0.word.isEmpty && !$0.code.isEmpty && !$0.word.contains(where: \.isWhitespace) && !$0.code.contains(where: \.isWhitespace) }) else {
-            errorText = "词条和编码不能为空或含空白字符"; return
+    @discardableResult
+    private func save() -> Bool {
+        guard let url = draft.selectedFile else { return false }
+        guard draft.entries.allSatisfy({ !$0.word.isEmpty && !$0.code.isEmpty && !$0.word.contains(where: \.isWhitespace) && !$0.code.contains(where: \.isWhitespace) }) else {
+            errorText = "词条和编码不能为空或含空白字符"; return false
         }
         do {
             let old = try String(contentsOf: url, encoding: .utf8)
+            guard old == draft.loadedContent else {
+                errorText = "词典已被其他程序修改。请先导出未保存词条，再刷新词典。"
+                return false
+            }
             guard let marker = old.range(of: "...", options: .anchored, range: old.startIndex..<old.endIndex) ?? old.range(of: "\n...\n") else {
-                errorText = "词典缺少 YAML 正文分隔符 ..."; return
+                errorText = "词典缺少 YAML 正文分隔符 ..."; return false
             }
             let header = String(old[..<marker.upperBound]).trimmingCharacters(in: .newlines)
             let originalBody = String(old[marker.upperBound...])
@@ -174,24 +261,39 @@ struct DictManagerView: View {
                 if trimmed.isEmpty || trimmed.hasPrefix("#") { return false }
                 return trimmed.split(whereSeparator: \.isWhitespace).count < 2
             }
-            guard unknown.isEmpty else { errorText = "词典包含无法解析的正文行，已停止保存以避免丢失数据"; return }
-            let body = (comments + entries.map { "\($0.word)\t\($0.code)\t\($0.weight)" }).joined(separator: "\n")
+            guard unknown.isEmpty else { errorText = "词典包含无法解析的正文行，已停止保存以避免丢失数据"; return false }
+            let body = (comments + draft.entries.map { "\($0.word)\t\($0.code)\t\($0.weight)" }).joined(separator: "\n")
             let backup = url.appendingPathExtension("backup")
             if FileManager.default.fileExists(atPath: backup.path) { try FileManager.default.removeItem(at: backup) }
             try FileManager.default.copyItem(at: url, to: backup)
-            try "\(header)\n\(body)\n".write(to: url, atomically: true, encoding: .utf8)
+            let updated = "\(header)\n\(body)\n"
+            try updated.write(to: url, atomically: true, encoding: .utf8)
+            draft.loadedContent = updated
+            draft.isDirty = false
+            notice = "词典已保存"
             rimeManager.deployRime()
-        } catch { errorText = error.localizedDescription }
+            return true
+        } catch { errorText = error.localizedDescription; return false }
     }
 
     private func exportDictionary() {
-        guard let url = selectedFile else { return }
+        guard let url = draft.selectedFile else { return }
+        let hasUnsavedChanges = draft.isDirty
+        let currentEntries = draft.entries
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = url.lastPathComponent
-        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = hasUnsavedChanges ? "\(url.deletingPathExtension().lastPathComponent)-未保存词条.json" : url.lastPathComponent
+        panel.allowedContentTypes = hasUnsavedChanges ? [.json] : [.plainText]
         panel.begin { response in
             guard response == .OK, let destination = panel.url else { return }
-            do { try Data(contentsOf: url).write(to: destination, options: .atomic) }
+            do {
+                if hasUnsavedChanges {
+                    let rows: [[String: Any]] = currentEntries.map { ["word": $0.word, "code": $0.code, "weight": $0.weight] }
+                    let data = try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
+                    try data.write(to: destination, options: .atomic)
+                } else {
+                    try Data(contentsOf: url).write(to: destination, options: .atomic)
+                }
+            }
             catch { errorText = error.localizedDescription }
         }
     }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var rimeManager = RimeManager()
+    @StateObject private var dictionaryDraft = DictionaryDraft()
     @State private var selectedTab: String = "general"
     
     var body: some View {
@@ -71,7 +72,7 @@ struct ContentView: View {
                 case "theme":
                     ThemeEditorView(rimeManager: rimeManager)
                 case "dict":
-                    DictManagerView(rimeManager: rimeManager)
+                    DictManagerView(rimeManager: rimeManager, draft: dictionaryDraft)
                 default:
                     GeneralConfigView(rimeManager: rimeManager)
                 }
