@@ -25,10 +25,50 @@ struct SmokeTests {
         try manager.createDirectory(at: destination, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: root) }
         try "词典".write(to: source.appendingPathComponent("sample.dict.yaml"), atomically: true, encoding: .utf8)
+        try "脚本".write(to: source.appendingPathComponent("custom.lua"), atomically: true, encoding: .utf8)
+        try "相同".write(to: source.appendingPathComponent("default.yaml"), atomically: true, encoding: .utf8)
         try Data([1, 2, 3]).write(to: source.appendingPathComponent("cache.bin"))
         let snapshot = try BackupService.create(source: source, destinationFolder: destination)
         precondition(manager.fileExists(atPath: snapshot.appendingPathComponent("sample.dict.yaml").path))
         precondition(!manager.fileExists(atPath: snapshot.appendingPathComponent("cache.bin").path))
-        print("Import and backup smoke tests passed")
+
+        let rime = root.appendingPathComponent("rime")
+        try manager.createDirectory(at: rime, withIntermediateDirectories: true)
+        try "旧词典".write(to: rime.appendingPathComponent("sample.dict.yaml"), atomically: true, encoding: .utf8)
+        try "相同".write(to: rime.appendingPathComponent("default.yaml"), atomically: true, encoding: .utf8)
+        let preview = try BackupService.preview(snapshot: snapshot, destination: rime)
+        precondition(preview.items.count == 3 && preview.changedCount == 2 && preview.replacementCount == 1)
+        let result = try BackupService.restore(preview)
+        precondition(result.restoredCount == 2)
+        let restoredText = try String(contentsOf: rime.appendingPathComponent("sample.dict.yaml"), encoding: .utf8)
+        let previousText = try String(contentsOf: result.previousFilesFolder!.appendingPathComponent("sample.dict.yaml"), encoding: .utf8)
+        precondition(restoredText == "词典" && previousText == "旧词典")
+        precondition(!manager.fileExists(atPath: rime.appendingPathComponent("备份说明.txt").path))
+
+        let identical = try BackupService.preview(snapshot: snapshot, destination: rime)
+        precondition(identical.changedCount == 0)
+        let unchangedResult = try BackupService.restore(identical)
+        precondition(unchangedResult.restoredCount == 0)
+
+        let stale = try BackupService.preview(snapshot: snapshot, destination: rime)
+        try "其他程序修改".write(to: rime.appendingPathComponent("sample.dict.yaml"), atomically: true, encoding: .utf8)
+        do {
+            _ = try BackupService.restore(stale)
+            preconditionFailure("恢复应拒绝预览后发生的外部修改")
+        } catch BackupServiceError.changedSincePreview { }
+
+        try manager.createSymbolicLink(at: snapshot.appendingPathComponent("linked.yaml"), withDestinationURL: source.appendingPathComponent("default.yaml"))
+        do {
+            _ = try BackupService.preview(snapshot: snapshot, destination: rime)
+            preconditionFailure("恢复应拒绝符号链接")
+        } catch BackupServiceError.unsafeFile(let name) { precondition(name == "linked.yaml") }
+        try manager.removeItem(at: snapshot.appendingPathComponent("linked.yaml"))
+        try manager.removeItem(at: rime.appendingPathComponent("custom.lua"))
+        try manager.createSymbolicLink(at: rime.appendingPathComponent("custom.lua"), withDestinationURL: root.appendingPathComponent("missing.lua"))
+        do {
+            _ = try BackupService.preview(snapshot: snapshot, destination: rime)
+            preconditionFailure("恢复应拒绝目标目录中的悬空符号链接")
+        } catch BackupServiceError.unsafeFile(let name) { precondition(name == "custom.lua") }
+        print("Import, backup and restore smoke tests passed")
     }
 }
