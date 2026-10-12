@@ -5,6 +5,7 @@ struct GeneralConfigView: View {
     @State private var showingRimeDirectory = false
     @State private var backupMessage: String?
     @State private var backupError: String?
+    @State private var restorePreview: BackupRestorePreview?
     @State private var editingPageSize = 5
     @State private var editingHotkey = "Control+grave"
     
@@ -190,10 +191,14 @@ struct GeneralConfigView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("选择 iCloud Drive、OneDrive、Dropbox、Google Drive 的本机同步文件夹，或任意本地文件夹。备份是一次性快照，不会自动同步或连接云盘账号。")
                                 .foregroundColor(.secondary)
-                            Button("选择备份文件夹并创建快照") { chooseBackupFolder() }
-                                .buttonStyle(.borderedProminent)
+                            HStack {
+                                Button("创建备份快照") { chooseBackupFolder() }
+                                    .buttonStyle(.borderedProminent)
+                                Button("从快照恢复…") { chooseRestoreFolder() }
+                                    .buttonStyle(.bordered)
+                            }
                             if let backupMessage { Text(backupMessage).textSelection(.enabled) }
-                            Text("包含配置目录顶层的 YAML、TXT、LUA 文件；不包含自动学习的二进制词库。")
+                            Text("只处理配置目录顶层的 YAML、TXT、LUA 文件；不包含自动学习的二进制词库。恢复前会列出新增和替换文件，并保留被替换的原件。")
                                 .font(.caption).foregroundColor(.secondary)
                         }.padding()
                     }
@@ -233,9 +238,19 @@ struct GeneralConfigView: View {
             editingPageSize = rimeManager.pageSize
             editingHotkey = rimeManager.switcherHotkey
         }
-        .alert("备份失败", isPresented: Binding(get: { backupError != nil }, set: { if !$0 { backupError = nil } })) {
+        .alert("备份或恢复失败", isPresented: Binding(get: { backupError != nil }, set: { if !$0 { backupError = nil } })) {
             Button("确定") { backupError = nil }
         } message: { Text(backupError ?? "") }
+        .sheet(item: $restorePreview) { preview in
+            BackupRestoreSheet(preview: preview) { approved in
+                restorePreview = nil
+                do {
+                    let result = try BackupService.restore(approved)
+                    backupMessage = "已恢复 \(result.restoredCount) 个文件。恢复前文件保存在 \(result.previousFilesFolder?.path ?? "无需替换原文件")。请在鼠须管菜单中重新部署。"
+                    rimeManager.loadConfigurations()
+                } catch { backupError = error.localizedDescription }
+            }
+        }
         .sheet(isPresented: $showingRimeDirectory) {
             RimeDirectoryView(rimeManager: rimeManager)
         }
@@ -252,6 +267,21 @@ struct GeneralConfigView: View {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do { backupMessage = "已创建：\(try BackupService.create(source: rimeManager.rimeUserDir, destinationFolder: url).path)" }
+            catch { backupError = error.localizedDescription }
+        }
+    }
+
+    private func chooseRestoreFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 RimeConfigTool 备份快照文件夹"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do { restorePreview = try BackupService.preview(snapshot: url, destination: rimeManager.rimeUserDir) }
             catch { backupError = error.localizedDescription }
         }
     }
@@ -311,6 +341,47 @@ struct GeneralConfigView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+private struct BackupRestoreSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let preview: BackupRestorePreview
+    let onRestore: (BackupRestorePreview) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("确认恢复快照").font(.title2)
+            Text("将新增或替换 \(preview.changedCount) 个文件，其中 \(preview.replacementCount) 个当前文件会先备份。未变化的文件不会重写。")
+            Text("目标：\(preview.destination.path)")
+                .font(.caption).foregroundColor(.secondary).textSelection(.enabled)
+            List(preview.items) { item in
+                HStack {
+                    Text(item.name).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(status(for: item.action))
+                        .foregroundColor(item.action == .replace ? .orange : .secondary)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            Text("请先结束正在使用的输入法会话。恢复后需在鼠须管菜单中重新部署；自动学习的二进制词库不在此次恢复范围内。")
+                .font(.caption).foregroundColor(.secondary)
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                Button("确认恢复 \(preview.changedCount) 个文件", role: .destructive) { onRestore(preview) }
+                    .disabled(preview.changedCount == 0)
+            }
+        }
+        .padding()
+        .frame(width: 620, height: 430)
+    }
+
+    private func status(for action: BackupRestoreItem.Action) -> String {
+        switch action {
+        case .add: return "新增"
+        case .replace: return "替换（保留原件）"
+        case .identical: return "相同，跳过"
         }
     }
 }
