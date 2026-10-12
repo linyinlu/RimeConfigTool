@@ -44,6 +44,7 @@ GitHub Actions 已在 macOS 15 上完成 Xcode 构建和现有词库导入、备
 - 基本设置新增“从快照恢复”：预览待新增、待替换和相同的文件，确认后仅恢复变化的顶层 YAML、TXT、LUA 文件。若快照或当前配置在预览后改变，则拒绝恢复。
 - 恢复前将同名原文件复制到配置目录内的 `RimeConfigTool-before-restore-*` 文件夹；写入失败时尝试回滚。备份和恢复均拒绝指向其他位置的符号链接文件。
 - 增加恢复文件、保留原件、拒绝外部改动和符号链接的 smoke tests。尚未在实际鼠须管环境中进行交互验证；云盘仍仅通过用户选择的本机同步目录工作。
+- 验证：[macOS CI 构建及 smoke tests 通过](https://github.com/linyinlu/RimeConfigTool/actions/runs/38191291397)。
 
 ### 2026-10-05
 
