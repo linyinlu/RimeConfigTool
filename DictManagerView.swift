@@ -58,7 +58,7 @@ struct DictManagerView: View {
             HStack {
                 TextField("搜索词汇或编码", text: $search)
                 Button("添加词汇") { showingAdd = true }.disabled(draft.selectedFile == nil)
-                Button("导入文本词库") { showingImport = true }.disabled(draft.selectedFile == nil)
+                Button("导入词库或草稿") { showingImport = true }.disabled(draft.selectedFile == nil)
                 Button(draft.isDirty ? "导出未保存词条" : "导出词典") { exportDictionary() }
                     .disabled(draft.selectedFile == nil)
             }
@@ -104,7 +104,7 @@ struct DictManagerView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showingImport, allowedContentTypes: [.plainText, .commaSeparatedText], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $showingImport, allowedContentTypes: [.plainText, .commaSeparatedText, .json], allowsMultipleSelection: false) { result in
             do {
                 guard let url = try result.get().first else { return }
                 let scoped = url.startAccessingSecurityScopedResource()
@@ -117,25 +117,38 @@ struct DictManagerView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("确认导入词条").font(.title2)
                 Text("格式：\(pendingImport?.format ?? "")；可导入 \(pendingImport?.entries.count ?? 0) 条，跳过 \(pendingImport?.skipped ?? 0) 行。")
-                Text("预览前 10 条；相同词语与编码将保留现有词条。导入后仍需点击保存词典。")
-                    .foregroundColor(.secondary)
+                if pendingImport?.mode == .replaceDraft {
+                    Text("这份 JSON 草稿会替换“\(draft.selectedFile?.lastPathComponent ?? "当前词典")”编辑区的全部 \(draft.entries.count) 条词条，包括未保存修改。请核对目标词典；确认后仍需点击保存词典。")
+                        .foregroundColor(.orange)
+                } else {
+                    Text("预览前 10 条；相同词语与编码将保留现有词条。导入后仍需点击保存词典。")
+                        .foregroundColor(.secondary)
+                }
                 List(Array((pendingImport?.entries ?? []).prefix(10))) { entry in
                     HStack { Text(entry.word); Spacer(); Text(entry.code); Text("\(entry.weight)") }
                 }
                 HStack {
                     Spacer()
                     Button("取消") { showingImportPreview = false; pendingImport = nil }
-                    Button("导入到当前词典") {
-                        let existing = Set(draft.entries.map { "\($0.word)\t\($0.code)" })
-                        var seen = existing
-                        for entry in pendingImport?.entries ?? [] {
-                            if seen.insert("\(entry.word)\t\(entry.code)").inserted {
-                                draft.entries.append(entry)
-                                draft.isDirty = true
-                            }
+                    if pendingImport?.mode == .replaceDraft {
+                        Button("用草稿替换当前词条", role: .destructive) {
+                            draft.entries = pendingImport?.entries ?? []
+                            draft.isDirty = true
+                            showingImportPreview = false; pendingImport = nil
                         }
-                        showingImportPreview = false; pendingImport = nil
-                    }.buttonStyle(.borderedProminent)
+                    } else {
+                        Button("导入到当前词典") {
+                            let existing = Set(draft.entries.map { "\($0.word)\t\($0.code)" })
+                            var seen = existing
+                            for entry in pendingImport?.entries ?? [] {
+                                if seen.insert("\(entry.word)\t\(entry.code)").inserted {
+                                    draft.entries.append(entry)
+                                    draft.isDirty = true
+                                }
+                            }
+                            showingImportPreview = false; pendingImport = nil
+                        }.buttonStyle(.borderedProminent)
+                    }
                 }
             }.padding().frame(width: 600, height: 420)
         }

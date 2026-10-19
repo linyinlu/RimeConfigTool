@@ -16,6 +16,21 @@ struct SmokeTests {
         precondition(imported.skipped == 1)
         precondition(imported.entries[0].weight == 100)
         precondition(imported.entries[1].weight == 0)
+        precondition(imported.mode == .merge)
+        let draftJSON = Data(#"[{"word":"你好","code":"nihao","weight":42},{"word":"世界","code":"shijie","weight":0}]"#.utf8)
+        let draft = try DictionaryImport.read(draftJSON)
+        precondition(draft.mode == .replaceDraft && draft.entries.count == 2)
+        precondition(draft.entries[0].word == "你好" && draft.entries[0].weight == 42)
+        let emptyDraft = try DictionaryImport.read(Data("[]".utf8))
+        precondition(emptyDraft.mode == .replaceDraft && emptyDraft.entries.isEmpty)
+        do {
+            _ = try DictionaryImport.read(Data(#"[{"word":"坏 词","code":"bad","weight":1}]"#.utf8))
+            preconditionFailure("无效 JSON 草稿不应导入")
+        } catch DictionaryImportError.invalidDraft { }
+        do {
+            _ = try DictionaryImport.read(Data(#"[{"word":"缺权重","code":"bad"}]"#.utf8))
+            preconditionFailure("缺少字段的 JSON 草稿不应导入")
+        } catch DictionaryImportError.invalidDraft { }
 
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -29,6 +44,6 @@ struct SmokeTests {
         let snapshot = try BackupService.create(source: source, destinationFolder: destination)
         precondition(manager.fileExists(atPath: snapshot.appendingPathComponent("sample.dict.yaml").path))
         precondition(!manager.fileExists(atPath: snapshot.appendingPathComponent("cache.bin").path))
-        print("Import and backup smoke tests passed")
+        print("Import, JSON draft, and backup smoke tests passed")
     }
 }
