@@ -43,7 +43,7 @@ GitHub Actions 已在 macOS 15 上完成 Xcode 构建和现有词库导入、备
 
 - 词典页现在可导入本工具导出的未保存词条 JSON 草稿。导入预览会明确显示目标词典与替换范围；确认后替换编辑区中的全部词条（含删除和权重），仍需手动点击“保存词典”才写入文件。
 - JSON 草稿必须是包含有效 `word`、`code` 和整数 `weight` 的完整数组；损坏或字段不全的文件会整体拒绝。空数组可恢复为无词条状态。文本词库导入仍采用追加去重，不会变成替换。
-- 验证：新增 JSON 草稿往返、空数组与错误格式的 smoke tests；macOS CI 结果见对应 PR。尚未在真实鼠须管界面验证。此功能不支持原输入法私有格式或云盘 OAuth。
+- 验证：新增 JSON 草稿往返、空数组与错误格式的 smoke tests；[macOS 构建与 smoke tests 通过](https://github.com/linyinlu/RimeConfigTool/actions/runs/39186930633)。尚未在真实鼠须管界面验证。此功能不支持原输入法私有格式或云盘 OAuth。
 
 ### 2026-10-05
 
