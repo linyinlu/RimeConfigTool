@@ -173,28 +173,13 @@ final class RimeManager: ObservableObject {
         guard schemaId.range(of: "^[A-Za-z0-9_]+$", options: .regularExpression) != nil else { return [] }
         let url = rimeUserDir.appendingPathComponent("\(schemaId).schema.yaml")
         let content = try String(contentsOf: url, encoding: .utf8)
-        var active = false
-        var items: [SchemaSwitchSetting] = []
-        var currentName: String?
-        var switchIndex = -1
-        for line in content.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed == "switches:" { active = true; continue }
-            if active && !line.hasPrefix(" ") && !trimmed.isEmpty && !trimmed.hasPrefix("#") { break }
-            guard active else { continue }
-            if trimmed.hasPrefix("- name:") {
-                switchIndex += 1
-                currentName = String(trimmed.dropFirst("- name:".count)).trimmingCharacters(in: .whitespaces)
-            } else if trimmed.hasPrefix("states:"), let name = currentName,
-                      let start = trimmed.firstIndex(of: "["), let end = trimmed.lastIndex(of: "]") {
-                let labels = trimmed[trimmed.index(after: start)..<end].split(separator: ",").map {
-                    String($0).trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                if labels.count >= 2 { items.append(SchemaSwitchSetting(index: switchIndex, name: name, states: labels)) }
-                currentName = nil
-            }
-        }
-        return items
+        return SchemaSwitchConfiguration.definitions(in: content)
+    }
+
+    func schemaSwitchConfiguration(for schemaId: String) throws -> (switches: [SchemaSwitchSetting], selections: [Int: Int]) {
+        let switches = try schemaSwitches(for: schemaId)
+        let patch = try readIfExists("\(schemaId).custom.yaml")
+        return (switches, try SchemaSwitchConfiguration.selections(in: patch, for: switches))
     }
 
     func saveSchemaSwitches(schemaId: String, selections: [Int: Int]) {
