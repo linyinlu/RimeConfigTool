@@ -1,12 +1,5 @@
 import SwiftUI
 
-struct SchemaSwitchSetting: Identifiable {
-    let index: Int
-    let name: String
-    let states: [String]
-    var id: Int { index }
-}
-
 struct SchemaSwitchView: View {
     @ObservedObject var rimeManager: RimeManager
     let schema: RimeSchema
@@ -17,7 +10,7 @@ struct SchemaSwitchView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("\\(schema.name) · 默认输入状态").font(.title2)
+            Text("\(schema.name) · 默认输入状态").font(.title2)
             Text("只设置切换到该输入方案时的初始状态；运行中的简繁和中英文切换仍在鼠须管输入法菜单进行。")
                 .foregroundColor(.secondary)
             if switches.isEmpty { Text(loadError ?? "该方案没有可识别的状态开关") }
@@ -44,8 +37,9 @@ struct SchemaSwitchView: View {
         }.padding().frame(width: 520, height: 440)
             .onAppear {
                 do {
-                    switches = try rimeManager.schemaSwitches(for: schema.schemaId)
-                    selected = Dictionary(uniqueKeysWithValues: switches.map { ($0.index, 0) })
+                    let configuration = try rimeManager.schemaSwitchConfiguration(for: schema.schemaId)
+                    switches = configuration.switches
+                    selected = configuration.selections
                 } catch { loadError = error.localizedDescription }
             }
     }
