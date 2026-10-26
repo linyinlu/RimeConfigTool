@@ -17,5 +17,5 @@ jobs:
         run: xcodebuild -project RimeConfigTool.xcodeproj -scheme RimeConfigTool -configuration Debug -sdk macosx CODE_SIGNING_ALLOWED=NO build
       - name: Test dictionary import and backup
         run: |
-          swiftc DictionaryImport.swift BackupService.swift Tests/SmokeTests.swift -o /tmp/rime-smoke-tests
+          swiftc DictionaryImport.swift BackupService.swift SchemaSwitchConfiguration.swift Tests/SmokeTests.swift -o /tmp/rime-smoke-tests
           /tmp/rime-smoke-tests
