@@ -21,7 +21,8 @@ struct GeneralSettingsTests {
         precondition(manager.errorMessage?.contains("已有手写配置") == true)
         precondition(manager.pageSize == 5)
         precondition(manager.switcherHotkey == "Control+grave")
-        precondition(try String(contentsOf: config, encoding: .utf8) == "patch:\n  # 手写配置\n")
+        let untouched = try String(contentsOf: config, encoding: .utf8)
+        precondition(untouched == "patch:\n  # 手写配置\n")
 
         try files.removeItem(at: config)
         manager.saveGeneralSettings(pageSize: 8, hotkey: "Control+Shift+space")
