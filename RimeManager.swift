@@ -147,11 +147,19 @@ final class RimeManager: ObservableObject {
     }
 
     func saveSchemaList(_ items: [RimeSchema]) {
+        saveSchemaList(items, pageSize: pageSize, hotkey: switcherHotkey)
+    }
+
+    private func saveSchemaList(_ items: [RimeSchema], pageSize: Int, hotkey: String) {
+        errorMessage = nil
         guard items.contains(where: { $0.enabled }) else { errorMessage = "至少启用一个输入方案"; return }
         let list = items.filter(\.enabled).map { "    - schema: \($0.schemaId)" }.joined(separator: "\n")
         do {
-            try writePatch("patch:\n  schema_list:\n\(list)\n  \"menu/page_size\": \(pageSize)\n  \"switcher/hotkeys\":\n    - \"\(switcherHotkey)\"\n", name: "default.custom.yaml")
+            try writePatch("patch:\n  schema_list:\n\(list)\n  \"menu/page_size\": \(pageSize)\n  \"switcher/hotkeys\":\n    - \"\(hotkey)\"\n", name: "default.custom.yaml")
+            // 只有配置文件确实写入成功后，才同步界面显示值。
             schemas = items
+            self.pageSize = pageSize
+            switcherHotkey = hotkey
             deployRime()
         } catch { errorMessage = error.localizedDescription }
     }
@@ -164,9 +172,7 @@ final class RimeManager: ObservableObject {
               parts.last?.range(of: "^[A-Za-z0-9_]+$", options: .regularExpression) != nil else {
             errorMessage = "快捷键格式示例：Control+grave 或 Control+Shift+space"; return
         }
-        self.pageSize = pageSize
-        switcherHotkey = hotkey
-        saveSchemaList(schemas)
+        saveSchemaList(schemas, pageSize: pageSize, hotkey: hotkey)
     }
 
     func schemaSwitches(for schemaId: String) throws -> [SchemaSwitchSetting] {
