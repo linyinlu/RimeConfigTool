@@ -13,7 +13,7 @@ struct GeneralSettingsTests {
         let previousPath = manager.customConfigPath
         defer { manager.customConfigPath = previousPath }
         manager.customConfigPath = root.path
-        manager.schemas = [RimeSchema(schemaId: "test", name: "测试", enabled: true)]
+        manager.schemas = [RimeSchema(schemaId: "test", name: "测试", enabled: true, description: nil)]
         let config = root.appendingPathComponent("default.custom.yaml")
 
         try "patch:\n  # 手写配置\n".write(to: config, atomically: true, encoding: .utf8)
