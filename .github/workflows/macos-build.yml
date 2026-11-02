@@ -19,3 +19,7 @@ jobs:
         run: |
           swiftc DictionaryImport.swift BackupService.swift SchemaSwitchConfiguration.swift Tests/SmokeTests.swift -o /tmp/rime-smoke-tests
           /tmp/rime-smoke-tests
+      - name: Test general settings write consistency
+        run: |
+          swiftc RimeManager.swift SchemaSwitchConfiguration.swift Tests/GeneralSettingsTests.swift -o /tmp/rime-settings-tests
+          /tmp/rime-settings-tests
