@@ -57,7 +57,7 @@ enum SchemaSwitchConfiguration {
         }
         return items.map { item in
             SchemaSwitchSetting(index: item.index, name: item.name, states: item.states,
-                                defaultIndex: schemaResets[item.index].map { $0 < 0 && $0 != -2 ? 0 : $0 } ?? 0)
+                                defaultIndex: schemaResets[item.index].map { $0 == -1 ? 0 : $0 } ?? 0)
         }
     }
 
