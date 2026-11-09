@@ -22,6 +22,7 @@ struct SmokeTests {
           - name: ascii_mode
             states: [ 中文, 英文 ]
           - name: simplification
+            reset: 1
             states: [ 漢字, 汉字 ]
         engine:
         """
@@ -29,12 +30,12 @@ struct SmokeTests {
         precondition(switches.count == 2)
         precondition(switches[0].name == "ascii_mode" && switches[0].states == ["中文", "英文"])
         let defaults = try SchemaSwitchConfiguration.selections(in: "", for: switches)
-        precondition(defaults[0] == 0 && defaults[1] == 0)
+        precondition(defaults[0] == 0 && defaults[1] == 1)
         let saved = try SchemaSwitchConfiguration.selections(
-            in: "patch:\n  \"switches/@0/reset\": 1\n  \"switches/@1/reset\": 1\n",
+            in: "patch:\n  \"switches/@0/reset\": 1\n  \"switches/@1/reset\": 0\n",
             for: switches
         )
-        precondition(saved[0] == 1 && saved[1] == 1)
+        precondition(saved[0] == 1 && saved[1] == 0)
         do {
             _ = try SchemaSwitchConfiguration.selections(
                 in: "patch:\n  \"switches/@0/reset\": 9\n",
@@ -42,6 +43,14 @@ struct SmokeTests {
             )
             preconditionFailure("越界的方案状态不应被静默接受")
         } catch SchemaSwitchConfigurationError.invalidReset(index: 0, value: 9) { }
+
+        let invalidSchema = SchemaSwitchConfiguration.definitions(
+            in: schemaText.replacingOccurrences(of: "reset: 1", with: "reset: 9")
+        )
+        do {
+            _ = try SchemaSwitchConfiguration.selections(in: "", for: invalidSchema)
+            preconditionFailure("方案本身的越界 reset 不应被静默改成第 0 项")
+        } catch SchemaSwitchConfigurationError.invalidReset(index: 1, value: 9) { }
 
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
