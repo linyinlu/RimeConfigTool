@@ -42,6 +42,7 @@ struct SchemaManagerView: View {
                 
                 TextField("搜索输入方案...", text: $searchText)
                     .textFieldStyle(.plain)
+                    .accessibilityLabel("搜索输入方案")
                 
                 if !searchText.isEmpty {
                     Button(action: {
@@ -51,6 +52,7 @@ struct SchemaManagerView: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("清除方案搜索")
                 }
             }
             .padding(.horizontal)
@@ -69,7 +71,9 @@ struct SchemaManagerView: View {
                         .foregroundColor(.secondary)
                     
                     if searchText.isEmpty {
-                        Text("请先安装Rime输入法并配置输入方案")
+                        Text(rimeManager.isRimeInstalled
+                             ? "当前配置目录没有 .schema.yaml 输入方案文件。请在基本设置中检查配置目录。"
+                             : "未检测到鼠须管。请先安装输入法，并在基本设置中检查配置目录。")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -78,7 +82,7 @@ struct SchemaManagerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(Array(filteredSchemas.enumerated()), id: \.element.id) { index, schema in
+                    ForEach(filteredSchemas) { schema in
                         SchemaRowView(schema: schema, rimeManager: rimeManager)
                     }
                 }
@@ -99,7 +103,8 @@ struct SchemaManagerView: View {
                     rimeManager.saveSchemaList(rimeManager.schemas)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(rimeManager.isLoading)
+                .disabled(rimeManager.isLoading || !rimeManager.schemas.contains(where: \.enabled))
+                .help(rimeManager.schemas.contains(where: \.enabled) ? "保存已启用的方案并重新部署" : "至少启用一个输入方案后才能保存")
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
@@ -125,6 +130,7 @@ struct SchemaRowView: View {
             ))
             .toggleStyle(.switch)
             .controlSize(.mini)
+            .accessibilityLabel("启用\(schema.name)输入方案")
             
             VStack(alignment: .leading, spacing: 4) {
                 // 方案名称
@@ -168,7 +174,8 @@ struct SchemaRowView: View {
                         .foregroundColor(.blue)
                 }
                 .buttonStyle(.plain)
-                .help("查看详情")
+                .help("查看\(schema.name)详情")
+                .accessibilityLabel("查看\(schema.name)详情")
             }
         }
         .padding(.vertical, 8)
