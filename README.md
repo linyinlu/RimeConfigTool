@@ -43,7 +43,7 @@ GitHub Actions 已在 macOS 15 上完成 Xcode 构建和现有词库导入、备
 
 - 输入方案页在没有方案时，按鼠须管检测结果分别提示安装或检查当前配置目录，避免把空目录误报成未安装；没有启用任何方案时，“保存并部署”不可点击并说明原因。
 - 为方案启用开关、详情按钮、搜索框与清除搜索按钮添加可辨识的辅助功能名称，减少多个无标签控件在 VoiceOver 下难以区分的问题。
-- 验证：macOS Xcode 构建结果见对应 PR。尚未在真实鼠须管与 VoiceOver 会话中手工验证视觉和朗读效果。
+- 验证：[macOS Xcode 构建及现有 smoke tests 通过](https://github.com/linyinlu/RimeConfigTool/actions/runs/43788157194)。尚未在真实鼠须管与 VoiceOver 会话中手工验证视觉和朗读效果。
 
 ### 2026-10-26
 
