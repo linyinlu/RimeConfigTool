@@ -43,7 +43,7 @@ GitHub Actions 已在 macOS 15 上完成 Xcode 构建和现有词库导入、备
 
 - 修正主题编辑器与鼠须管颜色格式不一致的问题：预览和取色器现在按 `0xBBGGRR`／`0xAABBGGRR` 解析并写回，避免红蓝通道互换；透明度色值可往返保留。
 - 手输颜色值必须是完整的鼠须管十六进制格式；无效值会显示提示并禁止“应用主题”，不会静默改为白色。取色弹窗的“取消”不再改动编辑中的颜色。
-- 验证：增加 BGR、透明度、非法输入及往返编码的纯逻辑 smoke tests；macOS 构建与测试结果见本次 PR。实际鼠须管主题显示及 VoiceOver 交互仍待手工验证。
+- 验证：增加 BGR、透明度、非法输入及往返编码的纯逻辑 smoke tests；[macOS Xcode 构建及 smoke tests 通过](https://github.com/linyinlu/RimeConfigTool/actions/runs/45097783114)。实际鼠须管主题显示及 VoiceOver 交互仍待手工验证。
 
 ### 2026-10-26
 
