@@ -43,6 +43,18 @@ struct SmokeTests {
             preconditionFailure("越界的方案状态不应被静默接受")
         } catch SchemaSwitchConfigurationError.invalidReset(index: 0, value: 9) { }
 
+        // 鼠须管采用 BGR；旧版编辑器误按 RGB 显示和保存。
+        let red = SquirrelColor.parse("0x0000FF")
+        precondition(red == SquirrelColor(red: 255, green: 0, blue: 0))
+        precondition(red?.encoded == "0x0000FF")
+        let transparentBlue = SquirrelColor.parse("0x80FF0000")
+        precondition(transparentBlue == SquirrelColor(red: 0, green: 0, blue: 255, alpha: 128))
+        precondition(transparentBlue?.encoded == "0x80FF0000")
+        precondition(SquirrelColor(red: 18, green: 52, blue: 86).encoded == "0x563412")
+        for invalid in ["", "#0000FF", "0x123", "0x12GGFF", "0x123456tail", "0x12345678FF"] {
+            precondition(SquirrelColor.parse(invalid) == nil)
+        }
+
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let source = root.appendingPathComponent("source")
@@ -55,6 +67,6 @@ struct SmokeTests {
         let snapshot = try BackupService.create(source: source, destinationFolder: destination)
         precondition(manager.fileExists(atPath: snapshot.appendingPathComponent("sample.dict.yaml").path))
         precondition(!manager.fileExists(atPath: snapshot.appendingPathComponent("cache.bin").path))
-        print("Import, schema switch, and backup smoke tests passed")
+        print("Import, schema switch, Squirrel color, and backup smoke tests passed")
     }
 }
