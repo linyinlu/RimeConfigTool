@@ -4,6 +4,12 @@ struct ThemeEditorView: View {
     @ObservedObject var rimeManager: RimeManager
     @State private var editingTheme: RimeTheme
     @State private var showingPreview = true
+
+    private var hasInvalidColor: Bool {
+        [editingTheme.backgroundColor, editingTheme.borderColor, editingTheme.textColor,
+         editingTheme.highlightedColor, editingTheme.candidateTextColor]
+            .contains { SquirrelColor.parse($0) == nil }
+    }
     
     init(rimeManager: RimeManager) {
         self.rimeManager = rimeManager
@@ -98,6 +104,12 @@ struct ThemeEditorView: View {
                                 ColorPickerRow(label: "文字颜色", colorHex: $editingTheme.textColor)
                                 ColorPickerRow(label: "高亮颜色", colorHex: $editingTheme.highlightedColor)
                                 ColorPickerRow(label: "候选词颜色", colorHex: $editingTheme.candidateTextColor)
+                                if hasInvalidColor {
+                                    Text("请修正颜色值后再应用主题；鼠须管使用 0xBBGGRR 或 0xAABBGGRR。")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
                             .padding()
                         }
@@ -120,6 +132,7 @@ struct ThemeEditorView: View {
                         rimeManager.saveTheme(editingTheme)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(hasInvalidColor)
                 }
                 .padding()
             }
@@ -187,16 +200,21 @@ struct ColorPickerRow: View {
             }
             .buttonStyle(.plain)
             .help("点击选择颜色")
+            .accessibilityLabel("\(label)色样")
             
             TextField("颜色值", text: $colorHex)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
+                .accessibilityLabel("\(label)色值")
+                .help("鼠须管颜色格式：0xBBGGRR 或 0xAABBGGRR")
         }
         .onAppear {
             selectedColor = Color(hex: colorHex) ?? .white
         }
         .onChange(of: colorHex) { newValue in
-            selectedColor = Color(hex: newValue) ?? .white
+            if let color = Color(hex: newValue) {
+                selectedColor = color
+            }
         }
         .onChange(of: selectedColor) { newColor in
             colorHex = newColor.toHexString()
@@ -204,7 +222,6 @@ struct ColorPickerRow: View {
         .sheet(isPresented: $showingColorPicker) {
             ColorPickerSheet(
                 selectedColor: $selectedColor,
-                colorHex: $colorHex,
                 title: label
             )
         }
@@ -213,8 +230,8 @@ struct ColorPickerRow: View {
 
 struct ColorPickerSheet: View {
     @Binding var selectedColor: Color
-    @Binding var colorHex: String
     let title: String
+    @State private var draftColor: Color = .white
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -223,7 +240,7 @@ struct ColorPickerSheet: View {
                 .font(.title2)
                 .fontWeight(.semibold)
             
-            ColorPicker("", selection: $selectedColor, supportsOpacity: false)
+            ColorPicker("", selection: $draftColor, supportsOpacity: false)
                 .labelsHidden()
                 .scaleEffect(1.5)
                 .frame(width: 200, height: 100)
@@ -233,19 +250,15 @@ struct ColorPickerSheet: View {
                     .font(.headline)
                 
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(selectedColor)
+                    .fill(draftColor)
                     .frame(height: 50)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.gray, lineWidth: 1)
                     )
                 
-                HStack {
-                    Text("十六进制值:")
-                    TextField("颜色值", text: $colorHex)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                }
+                Text("鼠须管色值：\(draftColor.toHexString())")
+                    .font(.system(.body, design: .monospaced))
             }
             .frame(width: 250)
             
@@ -256,7 +269,7 @@ struct ColorPickerSheet: View {
                 .buttonStyle(.bordered)
                 
                 Button("确定") {
-                    colorHex = selectedColor.toHexString()
+                    selectedColor = draftColor
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
@@ -264,6 +277,7 @@ struct ColorPickerSheet: View {
         }
         .padding()
         .frame(width: 300, height: 400)
+        .onAppear { draftColor = selectedColor }
     }
 }
 
@@ -362,39 +376,30 @@ struct ThemePreviewView: View {
     }
 }
 
-// 颜色扩展
+// 鼠须管颜色值以 BGR 顺序存储，预览与取色器使用 RGB。
 extension Color {
     init?(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            return nil
-        }
-        
+        guard let color = SquirrelColor.parse(hex) else { return nil }
         self.init(
             .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
+            red: Double(color.red) / 255,
+            green: Double(color.green) / 255,
+            blue: Double(color.blue) / 255,
+            opacity: Double(color.alpha) / 255
         )
     }
-    
+
     func toHexString() -> String {
         guard let rgb = NSColor(self).usingColorSpace(.deviceRGB) else { return "0x000000" }
-        return String(format: "0x%02X%02X%02X",
-                      Int((rgb.redComponent * 255).rounded()),
-                      Int((rgb.greenComponent * 255).rounded()),
-                      Int((rgb.blueComponent * 255).rounded()))
+        func byte(_ component: CGFloat) -> UInt8 {
+            UInt8(max(0, min(255, Int((component * 255).rounded()))))
+        }
+        return SquirrelColor(
+            red: byte(rgb.redComponent),
+            green: byte(rgb.greenComponent),
+            blue: byte(rgb.blueComponent),
+            alpha: byte(rgb.alphaComponent)
+        ).encoded
     }
 }
 
